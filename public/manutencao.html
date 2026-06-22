@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Manutenção - Agarra Mais</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f5f6f8;
+        color: #222;
+      }
+      .container {
+        max-width: 1000px;
+        margin: 24px auto;
+        padding: 0 16px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 10px;
+        border: 1px solid #e5e7eb;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      h1,
+      h2,
+      h3 {
+        margin-top: 0;
+      }
+      label {
+        display: block;
+        margin: 10px 0 6px;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      input,
+      textarea,
+      select,
+      button {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        box-sizing: border-box;
+        font-size: 14px;
+      }
+      textarea {
+        min-height: 90px;
+        resize: vertical;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .actions {
+        display: flex;
+        gap: 10px;
+      }
+      .actions button {
+        width: auto;
+        min-width: 160px;
+        cursor: pointer;
+      }
+      .muted {
+        font-size: 13px;
+        color: #6b7280;
+      }
+      .status {
+        display: inline-block;
+        font-size: 12px;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-weight: 700;
+      }
+      .status-pendente {
+        background: #fff7e6;
+        color: #92400e;
+      }
+      .status-resolvida {
+        background: #ecfdf3;
+        color: #166534;
+      }
+      .hidden {
+        display: none;
+      }
+      @media (max-width: 760px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Manutenção</h1>
+
+      <div class="card">
+        <h3>Conexão</h3>
+        <label for="token">Token JWT</label>
+        <input id="token" placeholder="Cole o token aqui" />
+        <div class="actions" style="margin-top: 10px">
+          <button id="btnConectar">Conectar</button>
+          <button id="btnSair" type="button">Limpar token</button>
+        </div>
+        <p id="perfilInfo" class="muted" style="margin-bottom: 0"></p>
+      </div>
+
+      <div id="adminCard" class="card hidden">
+        <h3>Nova manutenção (Admin)</h3>
+        <label for="titulo">Título</label>
+        <input id="titulo" placeholder="Ex: Troca de trava da máquina 12" />
+
+        <label for="descricao">Descrição</label>
+        <textarea
+          id="descricao"
+          placeholder="Descreva o problema ou atividade de manutenção"
+        ></textarea>
+
+        <label for="funcionarios"
+          >Funcionários que podem visualizar/resolver</label
+        >
+        <select id="funcionarios" multiple></select>
+        <p class="muted">Segure Ctrl para selecionar mais de um funcionário.</p>
+
+        <label for="custo">Custo da manutenção (R$)</label>
+        <input
+          id="custo"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Ex: 150.00"
+        />
+
+        <label for="lojaId">Loja do gasto variável</label>
+        <select id="lojaId"></select>
+
+        <div class="actions">
+          <button id="btnCriar">Lançar manutenção</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="actions" style="justify-content: space-between">
+          <h3 style="margin: 0">Lista de manutenções</h3>
+          <button id="btnAtualizar" type="button">Atualizar</button>
+        </div>
+        <div id="lista"></div>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = `${window.location.origin}/api`;
+      const tokenInput = document.getElementById("token");
+      const perfilInfo = document.getElementById("perfilInfo");
+      const adminCard = document.getElementById("adminCard");
+      const funcionariosSelect = document.getElementById("funcionarios");
+      const lista = document.getElementById("lista");
+      let lojas = [];
+
+      let perfilAtual = null;
+
+      tokenInput.value = localStorage.getItem("manutencao_token") || "";
+
+      function obterToken() {
+        return tokenInput.value.trim();
+      }
+
+      async function apiFetch(path, options = {}) {
+        const token = obterToken();
+        const headers = {
+          "Content-Type": "application/json",
+          ...(options.headers || {}),
+        };
+
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const response = await fetch(`${API_BASE}${path}`, {
+          ...options,
+          headers,
+        });
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.error || body.message || "Erro na requisição");
+        }
+
+        if (response.status === 204) return null;
+        return response.json();
+      }
+
+      function renderLista(manutencoes) {
+        if (!manutencoes.length) {
+          lista.innerHTML =
+            '<p class="muted">Nenhuma manutenção encontrada.</p>';
+          return;
+        }
+
+        lista.innerHTML = manutencoes
+          .map((item) => {
+            const statusClass =
+              item.status === "RESOLVIDA"
+                ? "status-resolvida"
+                : "status-pendente";
+
+            const podeResolver =
+              item.status === "PENDENTE" &&
+              (perfilAtual?.role === "ADMIN" ||
+                (item.funcionariosPermitidos || []).some(
+                  (f) => f.id === perfilAtual?.id,
+                ));
+
+            const funcionarios = (item.funcionariosPermitidos || [])
+              .map((f) => f.nome)
+              .join(", ");
+
+            return `
+              <div class="card" style="margin-top: 10px; margin-bottom: 0;">
+                <div style="display: flex; justify-content: space-between; gap: 10px; align-items: center;">
+                  <h3 style="margin: 0;">${item.titulo}</h3>
+                  <span class="status ${statusClass}">${item.status}</span>
+                </div>
+                <p style="margin: 10px 0;">${item.descricao}</p>
+                <p class="muted" style="margin: 6px 0;">Criado por: ${
+                  item.criadoPor?.nome || "-"
+                }</p>
+                <p class="muted" style="margin: 6px 0;">Custo: ${
+                  item.custo !== null && item.custo !== undefined
+                    ? `R$ ${item.custo}`
+                    : "-"
+                }</p>
+                <p class="muted" style="margin: 6px 0;">Loja: ${
+                  item.loja?.nome || "-"
+                }</p>
+                <p class="muted" style="margin: 6px 0;">Funcionários permitidos: ${
+                  funcionarios || "-"
+                }</p>
+                <p class="muted" style="margin: 6px 0;">Resolvido por: ${
+                  item.resolvidoPor?.nome || "-"
+                }</p>
+                ${
+                  podeResolver
+                    ? `<div class="actions"><button type="button" data-id="${item.id}" class="btnResolver">Marcar como resolvido</button></div>`
+                    : ""
+                }
+              </div>
+            `;
+          })
+          .join("");
+
+        document.querySelectorAll(".btnResolver").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            try {
+              await apiFetch(`/manutencoes/${btn.dataset.id}/resolver`, {
+                method: "PATCH",
+              });
+              await carregarManutencoes();
+            } catch (error) {
+              alert(error.message);
+            }
+          });
+        });
+      }
+
+      async function carregarFuncionarios() {
+        const funcionarios = await apiFetch("/manutencoes/funcionarios");
+        funcionariosSelect.innerHTML = funcionarios
+          .map((f) => `<option value="${f.id}">${f.nome} (${f.email})</option>`)
+          .join("");
+      }
+
+      async function carregarLojas() {
+        lojas = await apiFetch("/lojas");
+        const selectLoja = document.getElementById("lojaId");
+        selectLoja.innerHTML = [
+          '<option value="">Selecione...</option>',
+          ...lojas.map(
+            (loja) => `<option value="${loja.id}">${loja.nome}</option>`,
+          ),
+        ].join("");
+      }
+
+      async function carregarManutencoes() {
+        const manutencoes = await apiFetch("/manutencoes");
+        renderLista(manutencoes);
+      }
+
+      async function conectar() {
+        const token = obterToken();
+        if (!token) {
+          alert("Informe um token JWT");
+          return;
+        }
+
+        try {
+          localStorage.setItem("manutencao_token", token);
+          perfilAtual = await apiFetch("/auth/perfil");
+
+          perfilInfo.textContent = `Usuário: ${perfilAtual.nome} | Role: ${perfilAtual.role}`;
+          adminCard.classList.toggle("hidden", perfilAtual.role !== "ADMIN");
+
+          if (perfilAtual.role === "ADMIN") {
+            await carregarFuncionarios();
+            await carregarLojas();
+          }
+
+          await carregarManutencoes();
+        } catch (error) {
+          perfilAtual = null;
+          adminCard.classList.add("hidden");
+          perfilInfo.textContent = "";
+          lista.innerHTML = "";
+          alert(error.message);
+        }
+      }
+
+      document
+        .getElementById("btnConectar")
+        .addEventListener("click", conectar);
+
+      document.getElementById("btnSair").addEventListener("click", () => {
+        localStorage.removeItem("manutencao_token");
+        tokenInput.value = "";
+        perfilAtual = null;
+        perfilInfo.textContent = "";
+        adminCard.classList.add("hidden");
+        lista.innerHTML = "";
+      });
+
+      document
+        .getElementById("btnAtualizar")
+        .addEventListener("click", async () => {
+          if (!perfilAtual) {
+            alert("Conecte primeiro");
+            return;
+          }
+          try {
+            await carregarManutencoes();
+          } catch (error) {
+            alert(error.message);
+          }
+        });
+
+      document
+        .getElementById("btnCriar")
+        .addEventListener("click", async () => {
+          if (!perfilAtual || perfilAtual.role !== "ADMIN") {
+            alert("Apenas admin pode criar manutenção");
+            return;
+          }
+
+          const titulo = document.getElementById("titulo").value.trim();
+          const descricao = document.getElementById("descricao").value.trim();
+          const custo = document.getElementById("custo").value;
+          const lojaId = document.getElementById("lojaId").value;
+          const funcionariosIds = Array.from(
+            funcionariosSelect.selectedOptions,
+          ).map((opt) => opt.value);
+
+          const custoInformado = custo !== "";
+          const custoNumerico = custoInformado
+            ? Number(String(custo).replace(",", "."))
+            : null;
+
+          if (!titulo || !descricao || funcionariosIds.length === 0) {
+            alert("Preencha título, descrição e selecione funcionários");
+            return;
+          }
+
+          if (
+            custoInformado &&
+            (!Number.isFinite(custoNumerico) || custoNumerico < 0)
+          ) {
+            alert("Informe um custo válido (maior ou igual a zero)");
+            return;
+          }
+
+          if (custoInformado && custoNumerico > 0 && !lojaId) {
+            alert("Selecione a loja para lançar o gasto variável");
+            return;
+          }
+
+          try {
+            await apiFetch("/manutencoes", {
+              method: "POST",
+              body: JSON.stringify({
+                titulo,
+                descricao,
+                funcionariosIds,
+                custo: custoInformado ? custoNumerico : null,
+                lojaId: lojaId || null,
+              }),
+            });
+
+            document.getElementById("titulo").value = "";
+            document.getElementById("descricao").value = "";
+            document.getElementById("custo").value = "";
+            document.getElementById("lojaId").value = "";
+            Array.from(funcionariosSelect.options).forEach((opt) => {
+              opt.selected = false;
+            });
+
+            await carregarManutencoes();
+          } catch (error) {
+            alert(error.message);
+          }
+        });
+
+      if (obterToken()) {
+        conectar();
+      }
+    </script>
+  </body>
+</html>
