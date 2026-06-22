@@ -135,6 +135,12 @@ const startServer = async () => {
     await sequelize.sync();
     console.log("✅ Database sincronizado!");
 
+    const { obterOuCriarGaragem } = await import(
+      "./controllers/movimentacaoEstoqueLojaController.js"
+    );
+    const garagem = await obterOuCriarGaragem();
+    console.log(`✅ Depósito central disponível: ${garagem.nome}`);
+
     const queryInterface = sequelize.getQueryInterface();
     const colunasMaquinas = await queryInterface.describeTable("maquinas");
     if (!colunasMaquinas.machine_pay_pos_id) {

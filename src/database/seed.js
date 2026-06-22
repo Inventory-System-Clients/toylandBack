@@ -14,6 +14,11 @@ dotenv.config();
 
 const lojasSeed = [
   {
+    nome: "Garagem",
+    endereco: "Depósito central de produtos",
+    responsavel: "Estoque central",
+  },
+  {
     nome: "Aricanduva",
     endereco: "Shopping Aricanduva",
     cidade: "São Paulo",

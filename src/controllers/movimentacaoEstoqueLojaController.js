@@ -1,6 +1,33 @@
 import MovimentacaoEstoqueLoja from "../models/MovimentacaoEstoqueLoja.js";
 import MovimentacaoEstoqueLojaProduto from "../models/MovimentacaoEstoqueLojaProduto.js";
-import { Loja, Usuario, Produto } from "../models/index.js";
+import {
+  EstoqueLoja,
+  Loja,
+  Usuario,
+  Produto,
+} from "../models/index.js";
+import { sequelize } from "../database/connection.js";
+
+const NOME_DEPOSITO_CENTRAL = "Garagem";
+
+export const obterOuCriarGaragem = async (transaction) => {
+  const [garagem] = await Loja.findOrCreate({
+    where: { nome: NOME_DEPOSITO_CENTRAL },
+    defaults: {
+      nome: NOME_DEPOSITO_CENTRAL,
+      endereco: "Depósito central de produtos",
+      responsavel: "Estoque central",
+      ativo: true,
+    },
+    transaction,
+  });
+
+  if (!garagem.ativo) {
+    await garagem.update({ ativo: true }, { transaction });
+  }
+
+  return garagem;
+};
 
 // Listar todas as movimentações de estoque de loja
 export const listarMovimentacoesEstoqueLoja = async (req, res) => {
@@ -126,6 +153,158 @@ export const criarMovimentacaoEstoqueLoja = async (req, res) => {
     return res.status(500).json({
       error: "Erro interno ao criar movimentação",
       details: err.message,
+    });
+  }
+};
+
+// Transferir produtos da Garagem para o depósito de uma loja
+export const transferirDaGaragem = async (req, res) => {
+  const transaction = await sequelize.transaction();
+
+  try {
+    const { lojaDestinoId, produtos, observacao, dataMovimentacao } = req.body;
+    const usuarioId = req.usuario?.id;
+    const itensRecebidos = Array.isArray(produtos)
+      ? produtos
+          .map((item) => ({
+            produtoId: item.produtoId,
+            quantidade: Number(item.quantidade),
+          }))
+          .filter(
+            (item) =>
+              item.produtoId &&
+              Number.isInteger(item.quantidade) &&
+              item.quantidade > 0,
+          )
+      : [];
+    const quantidadesPorProduto = new Map();
+    itensRecebidos.forEach((item) => {
+      quantidadesPorProduto.set(
+        item.produtoId,
+        (quantidadesPorProduto.get(item.produtoId) || 0) + item.quantidade,
+      );
+    });
+    const itens = Array.from(quantidadesPorProduto.entries()).map(
+      ([produtoId, quantidade]) => ({ produtoId, quantidade }),
+    );
+
+    if (!lojaDestinoId || itens.length === 0) {
+      await transaction.rollback();
+      return res.status(400).json({
+        error: "Loja de destino e produtos válidos são obrigatórios.",
+      });
+    }
+
+    const garagem = await obterOuCriarGaragem(transaction);
+    if (String(garagem.id) === String(lojaDestinoId)) {
+      await transaction.rollback();
+      return res
+        .status(400)
+        .json({ error: "A loja de destino deve ser diferente da Garagem." });
+    }
+
+    const lojaDestino = await Loja.findByPk(lojaDestinoId, { transaction });
+    if (!lojaDestino || !lojaDestino.ativo) {
+      await transaction.rollback();
+      return res.status(404).json({ error: "Loja de destino não encontrada." });
+    }
+
+    for (const item of itens) {
+      const estoqueOrigem = await EstoqueLoja.findOne({
+        where: { lojaId: garagem.id, produtoId: item.produtoId },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+
+      const disponivel = Number(estoqueOrigem?.quantidade || 0);
+      if (disponivel < item.quantidade) {
+        const produto = await Produto.findByPk(item.produtoId, { transaction });
+        await transaction.rollback();
+        return res.status(400).json({
+          error: `Estoque insuficiente na Garagem para ${produto?.nome || "o produto"}. Disponível: ${disponivel}, solicitado: ${item.quantidade}.`,
+        });
+      }
+    }
+
+    const data = dataMovimentacao || new Date();
+    const observacaoTransferencia =
+      observacao ||
+      `Transferência da Garagem para ${lojaDestino.nome}`;
+
+    const movimentacaoOrigem = await MovimentacaoEstoqueLoja.create(
+      {
+        lojaId: garagem.id,
+        usuarioId,
+        observacao: observacaoTransferencia,
+        dataMovimentacao: data,
+      },
+      { transaction },
+    );
+    const movimentacaoDestino = await MovimentacaoEstoqueLoja.create(
+      {
+        lojaId: lojaDestino.id,
+        usuarioId,
+        observacao: observacaoTransferencia,
+        dataMovimentacao: data,
+      },
+      { transaction },
+    );
+
+    for (const item of itens) {
+      const estoqueOrigem = await EstoqueLoja.findOne({
+        where: { lojaId: garagem.id, produtoId: item.produtoId },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      await estoqueOrigem.decrement("quantidade", {
+        by: item.quantidade,
+        transaction,
+      });
+
+      const [estoqueDestino] = await EstoqueLoja.findOrCreate({
+        where: { lojaId: lojaDestino.id, produtoId: item.produtoId },
+        defaults: { quantidade: 0 },
+        transaction,
+      });
+      await estoqueDestino.increment("quantidade", {
+        by: item.quantidade,
+        transaction,
+      });
+
+      await MovimentacaoEstoqueLojaProduto.bulkCreate(
+        [
+          {
+            movimentacaoEstoqueLojaId: movimentacaoOrigem.id,
+            produtoId: item.produtoId,
+            quantidade: item.quantidade,
+            tipoMovimentacao: "saida",
+          },
+          {
+            movimentacaoEstoqueLojaId: movimentacaoDestino.id,
+            produtoId: item.produtoId,
+            quantidade: item.quantidade,
+            tipoMovimentacao: "entrada",
+          },
+        ],
+        { transaction },
+      );
+    }
+
+    await transaction.commit();
+    return res.status(201).json({
+      message: `Produtos transferidos da Garagem para ${lojaDestino.nome}.`,
+      origem: { id: garagem.id, nome: garagem.nome },
+      destino: { id: lojaDestino.id, nome: lojaDestino.nome },
+      produtos: itens,
+    });
+  } catch (error) {
+    if (!transaction.finished) {
+      await transaction.rollback();
+    }
+    console.error("Erro ao transferir estoque da Garagem:", error);
+    return res.status(500).json({
+      error: "Erro interno ao transferir produtos da Garagem.",
+      details: error.message,
     });
   }
 };

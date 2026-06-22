@@ -1,6 +1,10 @@
 import { Loja, Maquina, UsuarioLoja } from "../models/index.js";
 
 const VALOR_FICHA_PADRAO_DEFAULT = 2.5;
+const NOME_DEPOSITO_CENTRAL = "garagem";
+
+const ehDepositoCentral = (loja) =>
+  loja?.nome?.trim().toLowerCase() === NOME_DEPOSITO_CENTRAL;
 
 const normalizarValorFichaPadrao = (valor) => {
   if (valor === undefined || valor === null || valor === "") {
@@ -153,6 +157,17 @@ export const atualizarLoja = async (req, res) => {
       valorFichaPadrao,
     } = req.body;
 
+    if (
+      ehDepositoCentral(loja) &&
+      ((nome && nome.trim().toLowerCase() !== NOME_DEPOSITO_CENTRAL) ||
+        ativo === false)
+    ) {
+      return res.status(400).json({
+        error:
+          "A Garagem é o depósito central obrigatório e não pode ser renomeada ou desativada.",
+      });
+    }
+
     const valorFichaNormalizado = normalizarValorFichaPadrao(valorFichaPadrao);
     if (valorFichaNormalizado.invalido) {
       return res.status(400).json({
@@ -187,6 +202,13 @@ export const deletarLoja = async (req, res) => {
 
     if (!loja) {
       return res.status(404).json({ error: "Loja não encontrada" });
+    }
+
+    if (ehDepositoCentral(loja)) {
+      return res.status(400).json({
+        error:
+          "A Garagem é o depósito central obrigatório e não pode ser excluída.",
+      });
     }
 
     // Verificar se já está inativa (segunda tentativa = hard delete)
