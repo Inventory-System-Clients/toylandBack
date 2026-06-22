@@ -18,6 +18,10 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 7d
+      - key: FRONTEND_URL
+        value: https://toyland.selfmachine.com.br
+      - key: CORS_ORIGINS
+        value: https://toyland.selfmachine.com.br
       - key: ADMIN_EMAIL
         value: admin@agarramais.com
       - key: ADMIN_PASSWORD

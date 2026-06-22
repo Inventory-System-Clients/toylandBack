@@ -24,34 +24,47 @@ app.use(
   }),
 );
 
-// Configurar CORS para aceitar localhost e produção
-const allowedOrigins = [
+// Configurar CORS para aceitar desenvolvimento e os frontends de produção.
+// CORS_ORIGINS pode receber múltiplas URLs separadas por vírgula.
+const environmentOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.CORS_ORIGINS || "").split(","),
+]
+  .map((origin) => origin?.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:3000",
   "http://localhost:5174",
+  "https://toyland.selfmachine.com.br",
+  "https://www.toyland.selfmachine.com.br",
   "https://agarramaisop.selfmachine.com.br",
   "https://grupogk.selfmachine.com.br",
-  process.env.FRONTEND_URL,
-].filter(Boolean); // Remove undefined se FRONTEND_URL não estiver definida
+  ...environmentOrigins,
+]);
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Permitir requisições sem origin (como mobile apps, Postman, curl)
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin(origin, callback) {
+    // Permitir requisições sem origin (como mobile apps, Postman e curl).
+    if (!origin) return callback(null, true);
 
-      // Se estiver na lista de origens permitidas ou for "*"
-      if (allowedOrigins.includes(origin) || allowedOrigins.includes("*")) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }),
-);
+    const normalizedOrigin = origin.replace(/\/$/, "");
+    if (allowedOrigins.has(normalizedOrigin) || allowedOrigins.has("*")) {
+      return callback(null, true);
+    }
+
+    console.warn(`⚠️ Origem bloqueada pelo CORS: ${origin}`);
+    return callback(new Error(`Origem não permitida pelo CORS: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(morgan("dev"));
 app.use(express.json({ limit: "12mb" }));
 app.use(express.urlencoded({ extended: true }));
