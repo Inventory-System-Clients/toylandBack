@@ -49,13 +49,13 @@ const Maquina = sequelize.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
       defaultValue: 5.0,
-      comment: "Valor em R$ de cada ficha",
+      comment: "Valor em R$ de cada jogada",
     },
     fichasNecessarias: {
       type: DataTypes.INTEGER,
       allowNull: true,
       field: "fichas_necessarias",
-      comment: "Quantidade de fichas necessárias para liberar uma jogada",
+      comment: "Campo legado. A ToyLand não usa fichas.",
       validate: {
         min: 1,
       },
