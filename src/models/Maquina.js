@@ -51,6 +51,12 @@ const Maquina = sequelize.define(
       defaultValue: 5.0,
       comment: "Valor em R$ de cada jogada",
     },
+    jogadasBoasPorPelucia: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      field: "jogadas_boas_por_pelucia",
+      comment: "Quantidade ideal de jogadas para sair uma pelúcia",
+    },
     fichasNecessarias: {
       type: DataTypes.INTEGER,
       allowNull: true,

@@ -2329,3 +2329,106 @@ export const alertasMovimentacaoIn = async (req, res) => {
       .json({ error: "Erro ao buscar alertas IN", message: error.message });
   }
 };
+
+// --- ALERTAS DE BOM DESEMPENHO ---
+export const alertasBomDesempenho = async (req, res) => {
+  try {
+    const maquinas = await Maquina.findAll({
+      where: { ativo: true },
+      include: [{ model: Loja, as: "loja", attributes: ["nome"] }],
+    });
+    const alertas = [];
+
+    for (const maquina of maquinas) {
+      if (
+        !maquina.jogadasBoasPorPelucia ||
+        Number(maquina.jogadasBoasPorPelucia) <= 0 ||
+        !maquina.valorFicha ||
+        Number(maquina.valorFicha) <= 0
+      ) {
+        continue;
+      }
+
+      const movimentacoes = await Movimentacao.findAll({
+        where: { maquinaId: maquina.id },
+        order: [["dataColeta", "DESC"]],
+        limit: 2,
+        attributes: [
+          "id",
+          "usuarioId",
+          "contadorOut",
+          "contadorIn",
+          "fichas",
+          "sairam",
+          "dataColeta",
+        ],
+        include: [
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: ["id", "nome", "email"],
+          },
+        ],
+      });
+
+      if (!movimentacoes || movimentacoes.length < 2) continue;
+
+      const atual = movimentacoes[0];
+      const anterior = movimentacoes[1];
+      if (
+        atual.contadorIn === null ||
+        anterior.contadorIn === null ||
+        (atual.sairam || 0) <= 0
+      ) {
+        continue;
+      }
+
+      const diffIn = (atual.contadorIn || 0) - (anterior.contadorIn || 0);
+      const valorFicha = Number(maquina.valorFicha);
+      const expectedDiff =
+        Number(maquina.jogadasBoasPorPelucia) * valorFicha *
+        (atual.sairam || 1);
+
+      if (diffIn > expectedDiff) {
+        const metadadosAtual = montarMetadadosMovimentacao(atual);
+        const metadadosAnterior = montarMetadadosMovimentacao(anterior);
+        alertas.push({
+          id: `${maquina.id}-${atual.id}-bomdesempenho`,
+          tipo: "bom_desempenho",
+          maquinaId: maquina.id,
+          maquinaNome: maquina.nome,
+          lojaNome: maquina.loja?.nome || maquina.lojaNome || null,
+          contador_in: atual.contadorIn || 0,
+          contador_in_anterior: anterior.contadorIn || 0,
+          fichas: atual.fichas,
+          sairam: atual.sairam || 0,
+          jogadasBoasPorPelucia: Number(maquina.jogadasBoasPorPelucia),
+          valorFicha: valorFicha,
+          diffIn,
+          expectedDiff,
+          diferenca: diffIn - expectedDiff,
+          ...metadadosAnterior,
+          ...metadadosAtual,
+          usuarioAnterior: metadadosAnterior.usuarioNome,
+          usuarioAtual: metadadosAtual.usuarioNome,
+          dataMovimentacaoAnterior: metadadosAnterior.dataMovimentacao,
+          dataMovimentacaoAtual: metadadosAtual.dataMovimentacao,
+          mensagem: `Desempenho acima do esperado: IN aumentou ${diffIn} desde a última coleta, sendo R$ ${Number(diferença || diffIn - expectedDiff).toFixed(2)} acima do esperado para ${atual.sairam || 1} pelúcia(s) (esperado R$ ${expectedDiff}).`,
+        });
+      }
+    }
+
+    res.json({ alertas });
+  } catch (error) {
+    res.status(500).json({
+      error: "Erro ao buscar alertas de bom desempenho",
+      message: error.message,
+    });
+  }
+};
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "Erro ao buscar alertas IN", message: error.message });
+  }
+};

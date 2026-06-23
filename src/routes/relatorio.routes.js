@@ -10,6 +10,7 @@ import {
   dashboardRelatorio,
   alertasMovimentacaoOut,
   alertasMovimentacaoIn,
+  alertasBomDesempenho,
 } from "../controllers/relatorioController.js";
 import { alertasAbastecimentoIncompleto } from "../controllers/movimentacaoController.js";
 import { autenticar, autorizarRole } from "../middlewares/auth.js";
@@ -54,6 +55,12 @@ router.get(
   autenticar,
   autorizarRole("ADMIN"),
   alertasEstoque,
+);
+router.get(
+  "/alertas-bom-desempenho",
+  autenticar,
+  autorizarRole("ADMIN"),
+  alertasBomDesempenho,
 );
 router.get(
   "/performance-maquinas",
