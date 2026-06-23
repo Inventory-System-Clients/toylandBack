@@ -23,6 +23,7 @@ import Sangria from "./Sangria.js";
 import ListaComprasPendente from "./ListaComprasPendente.js";
 import ListaComprasLoja from "./ListaComprasLoja.js";
 import ListaComprasProduto from "./ListaComprasProduto.js";
+import Fornecedor from "./Fornecedor.js";
 // Movimentação de Veículo -> Veículo e Usuário
 MovimentacaoVeiculo.belongsTo(Veiculo, {
   as: "veiculo",
@@ -314,4 +315,5 @@ export {
   ListaComprasPendente,
   ListaComprasLoja,
   ListaComprasProduto,
+  Fornecedor,
 };
