@@ -260,6 +260,51 @@ const calcularGastosPeriodo = async (lojaId, inicio, fim) => {
 };
 
 const registroDinheiroController = {
+  async obterProximoPeriodo(req, res) {
+    try {
+      const { lojaId, maquinaId } = req.query;
+      if (!lojaId || !maquinaId) {
+        return res.status(400).json({ error: "Informe a loja e a máquina." });
+      }
+
+      const where = {
+        lojaId,
+        registrarTotalLoja: false,
+        maquinaId,
+      };
+      const ultimoRegistro = await RegistroDinheiro.findOne({
+        where,
+        order: [
+          ["fim", "DESC"],
+          ["createdAt", "DESC"],
+        ],
+      });
+
+      const fim = new Date();
+      const inicio = ultimoRegistro?.fim
+        ? new Date(new Date(ultimoRegistro.fim).getTime() + 60 * 1000)
+        : new Date(fim.getTime() - 7 * DAY_IN_MS);
+
+      return res.json({
+        inicio: inicio.toISOString(),
+        fim: fim.toISOString(),
+        possuiHistorico: Boolean(ultimoRegistro),
+        ultimoFechamento: ultimoRegistro
+          ? {
+              id: ultimoRegistro.id,
+              inicio: ultimoRegistro.inicio,
+              fim: ultimoRegistro.fim,
+            }
+          : null,
+      });
+    } catch (err) {
+      console.error("[RegistrarDinheiro] Erro ao obter próximo período:", err);
+      return res.status(500).json({
+        error: "Não foi possível calcular o próximo período.",
+      });
+    }
+  },
+
   async consultarMachinePay(req, res) {
     try {
       const { maquinaId, inicio, fim } = req.query;
@@ -311,25 +356,29 @@ const registroDinheiroController = {
       const {
         loja,
         maquina,
-        registrarTotalLoja,
         inicio,
         fim,
         valorDinheiro,
         valorCartaoPix,
+        valorPix,
+        valorCartao,
         percentualTaxaCartaoMedia,
         observacoes,
         gastosVariaveis = [],
       } = req.body;
 
-      const ehRegistroTotalLoja = !!registrarTotalLoja;
+      const ehRegistroTotalLoja = false;
 
       console.log("[RegistrarDinheiro] Dados recebidos:", req.body);
 
-      if (!loja || !inicio || !fim) {
+      if (!loja || !maquina || !inicio || !fim) {
         console.error("[RegistrarDinheiro] Campos obrigatórios ausentes");
         return res
           .status(400)
-          .json({ error: "Campos obrigatórios ausentes: loja, início e fim." });
+          .json({
+            error:
+              "Campos obrigatórios ausentes: loja, máquina, início e fim.",
+          });
       }
 
       const inicioPeriodo = new Date(inicio);
@@ -346,6 +395,22 @@ const registroDinheiroController = {
         return res
           .status(400)
           .json({ error: "Data fim não pode ser menor que data início." });
+      }
+
+      const registroSobreposto = await RegistroDinheiro.findOne({
+        where: {
+          lojaId: loja,
+          maquinaId: ehRegistroTotalLoja ? null : maquina || null,
+          registrarTotalLoja: ehRegistroTotalLoja,
+          inicio: { [Op.lte]: fimPeriodo },
+          fim: { [Op.gte]: inicioPeriodo },
+        },
+      });
+      if (registroSobreposto) {
+        return res.status(409).json({
+          error:
+            "Este período se sobrepõe a um fechamento já registrado para o mesmo local.",
+        });
       }
 
       if (!Array.isArray(gastosVariaveis)) {
@@ -395,19 +460,34 @@ const registroDinheiroController = {
         ).toFixed(2),
       );
 
-      const valorCartaoPixNumero = normalizarValorMonetario(valorCartaoPix);
+      const recebeuValoresSeparados =
+        valorPix !== undefined || valorCartao !== undefined;
+      const valorPixNumero = recebeuValoresSeparados
+        ? normalizarValorMonetario(valorPix)
+        : 0;
+      const valorCartaoNumero = recebeuValoresSeparados
+        ? normalizarValorMonetario(valorCartao)
+        : normalizarValorMonetario(valorCartaoPix);
+      const valorCartaoPixNumero = Number(
+        (valorPixNumero + valorCartaoNumero).toFixed(2),
+      );
       const percentualTaxaCartaoMediaNumero = Math.max(
         normalizarValorMonetario(percentualTaxaCartaoMedia),
         0,
       );
       const taxaDeCartao = Number(
         (
-          valorCartaoPixNumero *
+          valorCartaoNumero *
           (Math.min(percentualTaxaCartaoMediaNumero, 100) / 100)
         ).toFixed(2),
       );
       const valorCartaoPixLiquidoNumero = Number(
-        Math.max(valorCartaoPixNumero - taxaDeCartao, 0).toFixed(2),
+        Math.max(valorPixNumero + valorCartaoNumero - taxaDeCartao, 0).toFixed(
+          2,
+        ),
+      );
+      const valorCartaoLiquidoNumero = Number(
+        Math.max(valorCartaoNumero - taxaDeCartao, 0).toFixed(2),
       );
 
       const dadosRegistro = {
@@ -419,6 +499,9 @@ const registroDinheiroController = {
         valorDinheiro: normalizarValorMonetario(valorDinheiro),
         valorCartaoPix: valorCartaoPixNumero,
         valorCartaoPixLiquido: valorCartaoPixLiquidoNumero,
+        valorPix: valorPixNumero,
+        valorCartao: valorCartaoNumero,
+        valorCartaoLiquido: valorCartaoLiquidoNumero,
         taxaDeCartao,
         percentualTaxaCartaoMedia: percentualTaxaCartaoMediaNumero,
         gastoFixoPeriodo: ehRegistroTotalLoja
@@ -447,6 +530,9 @@ const registroDinheiroController = {
             "valorDinheiro",
             "valorCartaoPix",
             "valorCartaoPixLiquido",
+            "valorPix",
+            "valorCartao",
+            "valorCartaoLiquido",
             "taxaDeCartao",
             "percentualTaxaCartaoMedia",
             "gastoFixoPeriodo",

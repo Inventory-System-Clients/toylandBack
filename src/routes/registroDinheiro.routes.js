@@ -8,11 +8,16 @@ router.get(
   autenticar,
   registroDinheiroController.consultarMachinePay,
 );
+router.get(
+  "/proximo-periodo",
+  autenticar,
+  registroDinheiroController.obterProximoPeriodo,
+);
 
 // POST /registro-dinheiro
-router.post("/", registroDinheiroController.criar);
+router.post("/", autenticar, registroDinheiroController.criar);
 
 // GET /registro-dinheiro
-router.get("/", registroDinheiroController.listar);
+router.get("/", autenticar, registroDinheiroController.listar);
 
 export default router;

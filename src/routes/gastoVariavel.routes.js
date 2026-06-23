@@ -3,10 +3,11 @@ import {
   criarGastoVariavel,
   listarGastosVariaveis,
 } from "../controllers/gastoVariavelController.js";
+import { autenticar, autorizarRole } from "../middlewares/auth.js";
 
 const router = express.Router();
 
-router.post("/gastos-variaveis", criarGastoVariavel);
-router.get("/gastos-variaveis", listarGastosVariaveis);
+router.post("/", autenticar, autorizarRole("ADMIN"), criarGastoVariavel);
+router.get("/", autenticar, autorizarRole("ADMIN"), listarGastosVariaveis);
 
 export default router;

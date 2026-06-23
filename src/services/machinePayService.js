@@ -109,8 +109,8 @@ const parseStats = (html) => {
     taxas,
     liquido,
     percentualTaxaMedia:
-      brutoComTaxasMp > 0
-        ? Number(((taxas / brutoComTaxasMp) * 100).toFixed(4))
+      debito + credito > 0
+        ? Number(((taxas / (debito + credito)) * 100).toFixed(4))
         : 0,
   };
 };

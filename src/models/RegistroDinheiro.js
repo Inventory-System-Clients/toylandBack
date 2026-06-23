@@ -37,6 +37,21 @@ const RegistroDinheiro = sequelize.define(
       type: DataTypes.DECIMAL(10, 2),
       defaultValue: 0,
     },
+    valorPix: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    valorCartao: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
+    valorCartaoLiquido: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+    },
     valorCartaoPixLiquido: {
       type: DataTypes.DECIMAL(10, 2),
       defaultValue: 0,

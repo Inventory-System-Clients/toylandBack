@@ -142,6 +142,26 @@ const startServer = async () => {
     console.log(`✅ Depósito central disponível: ${garagem.nome}`);
 
     const queryInterface = sequelize.getQueryInterface();
+    const colunasRegistroDinheiro =
+      await queryInterface.describeTable("registro_dinheiro");
+    const colunasFinanceirasRegistro = [
+      ["valorPix", "Valor Pix"],
+      ["valorCartao", "Valor Cartão"],
+      ["valorCartaoLiquido", "Valor Cartão Líquido"],
+    ];
+    for (const [coluna, comentario] of colunasFinanceirasRegistro) {
+      if (!colunasRegistroDinheiro[coluna]) {
+        const { DataTypes } = await import("sequelize");
+        await queryInterface.addColumn("registro_dinheiro", coluna, {
+          type: DataTypes.DECIMAL(10, 2),
+          allowNull: false,
+          defaultValue: 0,
+          comment: comentario,
+        });
+        console.log(`✅ Coluna ${coluna} adicionada ao registro de dinheiro!`);
+      }
+    }
+
     const colunasMaquinas = await queryInterface.describeTable("maquinas");
     if (!colunasMaquinas.machine_pay_pos_id) {
       const { DataTypes } = await import("sequelize");
