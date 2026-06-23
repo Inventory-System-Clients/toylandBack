@@ -110,15 +110,16 @@ export const saveGastosFixos = async (req, res) => {
       );
     }
 
-    if (nomesRecebidos.length > 0) {
-      await GastoFixoLoja.destroy({
-        where: {
-          lojaId,
-          nome: { [Op.notIn]: nomesRecebidos },
-        },
-        transaction,
-      });
-    }
+    await GastoFixoLoja.destroy({
+      where:
+        nomesRecebidos.length > 0
+          ? {
+              lojaId,
+              nome: { [Op.notIn]: nomesRecebidos },
+            }
+          : { lojaId },
+      transaction,
+    });
 
     const gastosAtuais = await GastoFixoLoja.findAll({
       where: { lojaId },
