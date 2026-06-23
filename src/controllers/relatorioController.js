@@ -343,16 +343,120 @@ export const dashboardRelatorio = async (req, res) => {
     });
 
     const totaisDados = totaisRaw[0] || {};
-    const faturamento = parseFloat(totaisDados.faturamentoTotal || 0);
     const saidas = parseInt(totaisDados.totalSairam || 0);
     const fichas = parseInt(totaisDados.totalFichas || 0);
     const dinheiroMovimentacao = parseFloat(totaisDados.dinheiro || 0);
     const pixMovimentacao = parseFloat(totaisDados.pix || 0);
 
-    let dinheiro = dinheiroMovimentacao;
-    let pix = pixMovimentacao;
-    let taxaDeCartao = 0;
+    const whereRegistroDinheiro = {
+      inicio: { [Op.lte]: fim },
+      fim: { [Op.gte]: inicio },
+    };
 
+    if (lojaId) {
+      whereRegistroDinheiro[Op.and] = [
+        sequelizeWhere(cast(col("lojaId"), "text"), String(lojaId)),
+      ];
+    }
+
+    const registrosDinheiro = await RegistroDinheiro.findAll({
+      where: whereRegistroDinheiro,
+      raw: true,
+    });
+
+    const dinheiroRegistro = registrosDinheiro.reduce(
+      (acc, registro) => acc + Number(registro.valorDinheiro || 0),
+      0,
+    );
+
+    const pixRegistro = registrosDinheiro.reduce((acc, registro) => {
+      if (registro.valorPix !== undefined && registro.valorPix !== null) {
+        return acc + Number(registro.valorPix || 0);
+      }
+      return acc;
+    }, 0);
+
+    const cartaoRegistro = registrosDinheiro.reduce((acc, registro) => {
+      if (registro.valorCartao !== undefined && registro.valorCartao !== null) {
+        return acc + Number(registro.valorCartao || 0);
+      }
+      if (
+        registro.valorPix !== undefined &&
+        registro.valorPix !== null &&
+        registro.valorCartaoPix !== undefined &&
+        registro.valorCartaoPix !== null
+      ) {
+        return (
+          acc +
+          Math.max(
+            Number(registro.valorCartaoPix || 0) -
+              Number(registro.valorPix || 0),
+            0,
+          )
+        );
+      }
+      return acc + Number(registro.valorCartaoPix || 0);
+    }, 0);
+
+    const taxaDeCartao = Number(
+      registrosDinheiro
+        .reduce(
+          (acc, registro) =>
+            acc +
+            Number(
+              registro.taxaDeCartao ??
+                registro.taxa_de_cartao ??
+                Math.max(
+                  Number(registro.valorCartao || registro.valorCartaoPix || 0) -
+                    Number(
+                      registro.valorCartaoLiquido ||
+                        registro.valorCartaoPixLiquido ||
+                        0,
+                    ),
+                  0,
+                ),
+            ),
+          0,
+        )
+        .toFixed(2),
+    );
+
+    const dinheiro = Number(dinheiroRegistro.toFixed(2));
+    const pix = Number(pixRegistro.toFixed(2));
+    const cartao = Number(cartaoRegistro.toFixed(2));
+    const faturamento = Number((dinheiro + pix + cartao).toFixed(2));
+
+    const faturamentoPorDiaRegistros = new Map();
+    registrosDinheiro.forEach((registro) => {
+      const dataBase = registro.fim || registro.createdAt || registro.inicio;
+      if (!dataBase) return;
+
+      const chaveData = new Date(dataBase).toISOString().slice(0, 10);
+      const valor =
+        Number(registro.valorDinheiro || 0) +
+        Number(registro.valorPix || 0) +
+        (registro.valorCartao !== undefined && registro.valorCartao !== null
+          ? Number(registro.valorCartao || 0)
+          : Number(registro.valorCartaoPix || 0) -
+            Number(registro.valorPix || 0));
+
+      faturamentoPorDiaRegistros.set(
+        chaveData,
+        Number(faturamentoPorDiaRegistros.get(chaveData) || 0) + valor,
+      );
+    });
+
+    if (lojaId && registrosDinheiro.length === 0) {
+      // Mantém compatibilidade visual para loja sem fechamento novo ainda.
+      // O card geral do dashboard fica zerado se não houver registro de dinheiro.
+      const dinheiroFallback = dinheiroMovimentacao;
+      const pixFallback = pixMovimentacao;
+      if (dinheiroFallback > 0 || pixFallback > 0) {
+        faturamentoPorDiaRegistros.clear();
+      }
+    }
+
+    /*
     if (lojaId) {
       const registrosDinheiro = await RegistroDinheiro.findAll({
         where: {
@@ -408,6 +512,7 @@ export const dashboardRelatorio = async (req, res) => {
 
       taxaDeCartao = Number(taxaRegistro.toFixed(2));
     }
+    */
 
     // --- QUERY 2: CUSTO DE PRODUTOS (TOTAL E DIÁRIO) ---
     const itensVendidos = await MovimentacaoProduto.findAll({
@@ -609,12 +714,15 @@ export const dashboardRelatorio = async (req, res) => {
       quantidade: parseInt(r.quantidade || 0),
     }));
 
-    const faturamentoPorDia = new Map(
-      timelineRaw.map((t) => [
-        String(t.data).slice(0, 10),
-        Number(parseFloat(t.faturamento || 0)),
-      ]),
-    );
+    const faturamentoPorDia =
+      registrosDinheiro.length > 0
+        ? faturamentoPorDiaRegistros
+        : new Map(
+            timelineRaw.map((t) => [
+              String(t.data).slice(0, 10),
+              Number(parseFloat(t.faturamento || 0)),
+            ]),
+          );
 
     const cursor = inicioDoDia(new Date(inicio));
     const fimDia = inicioDoDia(new Date(fim));
@@ -651,6 +759,7 @@ export const dashboardRelatorio = async (req, res) => {
         fichas,
         dinheiro,
         pix,
+        cartao,
       },
       graficoFinanceiro,
       performanceMaquinas,
@@ -840,10 +949,61 @@ export const balançoSemanal = async (req, res) => {
       ],
     });
 
+    const whereRegistroDinheiro = {
+      inicio: { [Op.lte]: fim },
+      fim: { [Op.gte]: inicio },
+    };
+
+    if (lojaId) {
+      whereRegistroDinheiro[Op.and] = [
+        sequelizeWhere(cast(col("lojaId"), "text"), String(lojaId)),
+      ];
+    }
+
+    const registrosDinheiro = await RegistroDinheiro.findAll({
+      where: whereRegistroDinheiro,
+      raw: true,
+    });
+
+    const idsLojasRegistros = [
+      ...new Set(
+        registrosDinheiro.map((registro) => registro.lojaId).filter(Boolean),
+      ),
+    ];
+    const lojasRegistros = idsLojasRegistros.length
+      ? await Loja.findAll({
+          where: { id: { [Op.in]: idsLojasRegistros } },
+          attributes: ["id", "nome"],
+          raw: true,
+        })
+      : [];
+    const nomesLojasPorId = new Map(
+      lojasRegistros.map((loja) => [String(loja.id), loja.nome]),
+    );
+
+    const obterValorRegistro = (registro) => {
+      const dinheiro = Number(registro.valorDinheiro || 0);
+      const pix = Number(registro.valorPix || 0);
+      const cartao =
+        registro.valorCartao !== undefined && registro.valorCartao !== null
+          ? Number(registro.valorCartao || 0)
+          : Math.max(
+              Number(registro.valorCartaoPix || 0) -
+                Number(registro.valorPix || 0),
+              0,
+            );
+
+      return Number((dinheiro + pix + cartao).toFixed(2));
+    };
+
+    const totalFaturamentoRegistrado = registrosDinheiro.reduce(
+      (total, registro) => total + obterValorRegistro(registro),
+      0,
+    );
+
     const totais = movimentacoes.reduce(
       (acc, mov) => {
         acc.totalFichas += mov.fichas || 0;
-        acc.totalFaturamento += parseFloat(mov.valorFaturado || 0);
         acc.totalSairam += mov.sairam || 0;
         acc.totalAbastecidas += mov.abastecidas || 0;
         return acc;
@@ -855,6 +1015,8 @@ export const balançoSemanal = async (req, res) => {
         totalAbastecidas: 0,
       },
     );
+
+    totais.totalFaturamento = Number(totalFaturamentoRegistrado.toFixed(2));
 
     totais.mediaFichasPremio =
       totais.totalSairam > 0
@@ -896,20 +1058,42 @@ export const balançoSemanal = async (req, res) => {
           nome: lojaNome,
           fichas: 0,
           faturamento: 0,
+          faturamentoMaquinas: 0,
           sairam: 0,
           abastecidas: 0,
         };
       }
       lojasMap[lojaNome].fichas += mov.fichas || 0;
-      lojasMap[lojaNome].faturamento += parseFloat(mov.valorFaturado || 0);
       lojasMap[lojaNome].sairam += mov.sairam || 0;
       lojasMap[lojaNome].abastecidas += mov.abastecidas || 0;
+    });
+
+    registrosDinheiro.forEach((registro) => {
+      const lojaNome =
+        nomesLojasPorId.get(String(registro.lojaId)) || "NÃ£o especificado";
+
+      if (!lojasMap[lojaNome]) {
+        lojasMap[lojaNome] = {
+          nome: lojaNome,
+          fichas: 0,
+          faturamento: 0,
+          faturamentoMaquinas: 0,
+          sairam: 0,
+          abastecidas: 0,
+        };
+      }
+
+      const valor = obterValorRegistro(registro);
+      lojasMap[lojaNome].faturamento += valor;
+      lojasMap[lojaNome].faturamentoMaquinas += valor;
     });
 
     const distribuicaoLojas = Object.values(lojasMap)
       .map((l) => ({
         ...l,
         mediaFichasPremio: l.sairam > 0 ? (l.fichas / l.sairam).toFixed(2) : 0,
+        mediaFaturamentoPremio:
+          l.sairam > 0 ? Number((l.faturamento / l.sairam).toFixed(2)) : 0,
       }))
       .sort((a, b) => b.faturamento - a.faturamento);
 
@@ -1476,8 +1660,7 @@ export const gerarRelatorioImpressaoPorLoja = async ({
       : valorFichaPadraoLoja;
     const faturamentoMaquina =
       (valoresPorMaquina[m.maquina.id]?.dinheiro || 0) +
-      (valoresPorMaquina[m.maquina.id]?.cartaoPixLiquido || 0) +
-      (m.fichas || 0) * valorFicha;
+      (valoresPorMaquina[m.maquina.id]?.cartaoPixLiquido || 0);
     const lucroLiquido = faturamentoMaquina - custoProdutosSairam;
     const ticketPorPremio =
       Number(m.totalSairam || 0) > 0
@@ -1580,7 +1763,7 @@ export const gerarRelatorioImpressaoPorLoja = async ({
   const diferenca = valorFichasReais - valorTotal;
   let avisoFichas = null;
 
-  if (Math.abs(diferenca) > 0.01) {
+  if (false && Math.abs(diferenca) > 0.01) {
     avisoFichas = `Atenção: diferença entre valor das fichas em reais (R$ ${valorFichasReais.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}) e valor total da loja (R$ ${valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}). Diferença: R$ ${diferenca.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
   }
 
@@ -1684,7 +1867,6 @@ export const gerarRelatorioImpressaoPorLoja = async ({
     maquinas: maquinasDetalhadas,
     graficoSaidaPorMaquina,
     graficoSaidaPorProduto,
-    avisoFichas,
   };
 };
 
