@@ -24,6 +24,7 @@ import listaComprasPendenteRoutes from "./listaComprasPendente.routes.js";
 import logAtividadeRoutes from "./logAtividade.routes.js";
 import assistenteIaRoutes from "./assistenteIa.routes.js";
 import fornecedorRoutes from "./fornecedor.routes.js";
+import compraFornecedorRoutes from "./compraFornecedor.routes.js";
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -40,6 +41,7 @@ router.use("/movimentacao-estoque-loja", movimentacaoEstoqueLojaRoutes);
 router.use("/logs-atividade", logAtividadeRoutes);
 router.use("/assistente-ia", assistenteIaRoutes);
 router.use("/fornecedores", fornecedorRoutes);
+router.use("/compras-fornecedores", compraFornecedorRoutes);
 
 router.use("/veiculos", veiculoRoutes);
 router.use("/alertas-veiculos", alertasVeiculosRoutes);

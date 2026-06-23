@@ -24,6 +24,8 @@ import ListaComprasPendente from "./ListaComprasPendente.js";
 import ListaComprasLoja from "./ListaComprasLoja.js";
 import ListaComprasProduto from "./ListaComprasProduto.js";
 import Fornecedor from "./Fornecedor.js";
+import CompraFornecedor from "./CompraFornecedor.js";
+import CompraFornecedorProduto from "./CompraFornecedorProduto.js";
 // Movimentação de Veículo -> Veículo e Usuário
 MovimentacaoVeiculo.belongsTo(Veiculo, {
   as: "veiculo",
@@ -289,6 +291,44 @@ ListaComprasProduto.belongsTo(ListaComprasLoja, {
   as: "listaLoja",
 });
 
+Fornecedor.hasMany(CompraFornecedor, {
+  foreignKey: "fornecedorId",
+  as: "compras",
+});
+CompraFornecedor.belongsTo(Fornecedor, {
+  foreignKey: "fornecedorId",
+  as: "fornecedor",
+});
+Loja.hasMany(CompraFornecedor, {
+  foreignKey: "destinoLojaId",
+  as: "comprasRecebidas",
+});
+CompraFornecedor.belongsTo(Loja, {
+  foreignKey: "destinoLojaId",
+  as: "destino",
+});
+Usuario.hasMany(CompraFornecedor, {
+  foreignKey: "usuarioId",
+  as: "comprasRegistradas",
+});
+CompraFornecedor.belongsTo(Usuario, {
+  foreignKey: "usuarioId",
+  as: "usuario",
+});
+CompraFornecedor.hasMany(CompraFornecedorProduto, {
+  foreignKey: "compraId",
+  as: "produtos",
+  onDelete: "CASCADE",
+});
+CompraFornecedorProduto.belongsTo(CompraFornecedor, {
+  foreignKey: "compraId",
+  as: "compra",
+});
+CompraFornecedorProduto.belongsTo(Produto, {
+  foreignKey: "produtoId",
+  as: "produto",
+});
+
 export {
   Usuario,
   Loja,
@@ -316,4 +356,6 @@ export {
   ListaComprasLoja,
   ListaComprasProduto,
   Fornecedor,
+  CompraFornecedor,
+  CompraFornecedorProduto,
 };
