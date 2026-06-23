@@ -1,5 +1,6 @@
 import MovimentacaoVeiculo from "./MovimentacaoVeiculo.js";
 import GastoVariavel from "./GastoVariavel.js";
+import TipoGastoVariavel from "./TipoGastoVariavel.js";
 import Usuario from "./Usuario.js";
 import Loja from "./Loja.js";
 import Maquina from "./Maquina.js";
@@ -157,6 +158,27 @@ Produto.hasMany(EstoqueLoja, {
 });
 EstoqueLoja.belongsTo(Loja, { foreignKey: "lojaId", as: "loja" });
 EstoqueLoja.belongsTo(Produto, { foreignKey: "produtoId", as: "produto" });
+
+Loja.hasMany(GastoVariavel, {
+  foreignKey: "lojaId",
+  sourceKey: "id",
+  as: "gastosVariaveis",
+});
+GastoVariavel.belongsTo(Loja, {
+  foreignKey: "lojaId",
+  targetKey: "id",
+  as: "loja",
+});
+Usuario.hasMany(GastoVariavel, {
+  foreignKey: "usuarioId",
+  sourceKey: "id",
+  as: "gastosVariaveis",
+});
+GastoVariavel.belongsTo(Usuario, {
+  foreignKey: "usuarioId",
+  targetKey: "id",
+  as: "usuario",
+});
 
 Loja.hasMany(GastoFixoLoja, {
   foreignKey: "lojaId",
@@ -358,6 +380,7 @@ export {
   MovimentacaoVeiculo,
   RegistroDinheiro,
   GastoVariavel,
+  TipoGastoVariavel,
   GastoFixoLoja,
   GastoFixoLojaMensal,
   GastoTotalFixoLoja,

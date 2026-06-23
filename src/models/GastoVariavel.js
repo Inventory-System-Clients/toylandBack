@@ -14,6 +14,11 @@ const GastoVariavel = sequelize.define(
       allowNull: false,
       references: { model: "lojas", key: "id" },
     },
+    usuarioId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: "usuarios", key: "id" },
+    },
     nome: {
       type: DataTypes.STRING(100),
       allowNull: false,

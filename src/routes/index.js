@@ -16,6 +16,7 @@ import alertasVeiculosRoutes from "./alertasVeiculos.routes.js";
 import movimentacaoVeiculoRoutes from "./movimentacaoVeiculo.routes.js";
 import registroDinheiroRoutes from "./registroDinheiro.routes.js";
 import gastoVariavelRoutes from "./gastoVariavel.routes.js";
+import tipoGastoVariavelRoutes from "./tipoGastoVariavel.routes.js";
 import gastoFixoLojaRoutes from "./gastoFixoLoja.routes.js";
 import manutencaoRoutes from "./manutencao.routes.js";
 import fechamentoMensalRelatorioRoutes from "./fechamentoMensalRelatorio.routes.js";
@@ -51,6 +52,7 @@ router.use("/movimentacao-veiculos", movimentacaoVeiculoRoutes);
 router.use("/registro-dinheiro", registroDinheiroRoutes);
 router.use("/graficos", graficosRoutes);
 router.use("/gastos-variaveis", gastoVariavelRoutes);
+router.use("/tipos-gastos-variaveis", tipoGastoVariavelRoutes);
 router.use("/graficos", graficosRoutes);
 
 router.use("/gastos-fixos-loja", gastoFixoLojaRoutes);
