@@ -1,6 +1,21 @@
-import { GastoFixoLoja, GastoTotalFixoLoja } from "../models/index.js";
-import { sequelize } from "../database/connection.js";
 import { Op } from "sequelize";
+import {
+  GastoFixoLoja,
+  GastoFixoLojaMensal,
+  GastoTotalFixoLoja,
+} from "../models/index.js";
+import { sequelize } from "../database/connection.js";
+import {
+  calcularTotalGastosFixosMes,
+  mesAnterior,
+  resolverGastosFixosDoMes,
+} from "../services/gastoFixoMensalService.js";
+
+const ALCANCES_VALIDOS = new Set([
+  "somente_mes",
+  "deste_mes_em_diante",
+  "mes_anterior_e_seguintes",
+]);
 
 const normalizarNomeGasto = (nomeOriginal) =>
   String(nomeOriginal || "")
@@ -26,54 +41,75 @@ const normalizarNomeParaPersistencia = (nomeOriginal) => {
   return nome;
 };
 
-const consolidarGastosFixosPorNome = (gastos) => {
+const obterMesReferencia = (origem = {}) => {
+  const agora = new Date();
+  const ano = Number(origem.ano || agora.getFullYear());
+  const mes = Number(origem.mes || agora.getMonth() + 1);
+
+  if (
+    !Number.isInteger(ano) ||
+    ano < 2000 ||
+    ano > 2200 ||
+    !Number.isInteger(mes) ||
+    mes < 1 ||
+    mes > 12
+  ) {
+    return null;
+  }
+
+  return { ano, mes };
+};
+
+const consolidarGastosRecebidos = (gastos) => {
   const mapa = new Map();
 
   for (const gasto of gastos) {
-    const chave = normalizarNomeGasto(gasto?.nome);
+    const nome = normalizarNomeParaPersistencia(gasto?.nome);
+    const chave = normalizarNomeGasto(nome);
     if (!chave) continue;
-    mapa.set(chave, gasto);
+
+    const valor = Number(gasto?.valor || 0);
+    mapa.set(chave, {
+      nome,
+      valor: Number.isFinite(valor) ? valor : 0,
+      observacao: String(gasto?.observacao || "").trim() || null,
+    });
   }
 
-  return Array.from(mapa.values());
+  return mapa;
 };
 
-const calcularValorMensalDoGasto = (gasto) => {
-  const valor = Number(gasto?.valor || 0);
-
-  if (!Number.isFinite(valor) || valor <= 0) return 0;
-  return valor;
-};
-
-const calcularTotalFixoLoja = async (lojaId, transaction) => {
-  const gastos = await GastoFixoLoja.findAll({
-    where: { lojaId },
-    attributes: ["id", "nome", "valor"],
-    order: [["id", "ASC"]],
-    raw: true,
+const atualizarTotalMensal = async (lojaId, ano, mes, transaction) => {
+  const valorTotal = await calcularTotalGastosFixosMes(lojaId, ano, mes, {
     transaction,
   });
 
-  const gastosConsolidados = consolidarGastosFixosPorNome(gastos);
-
-  const total = gastosConsolidados.reduce(
-    (acc, item) => acc + calcularValorMensalDoGasto(item),
-    0,
+  await GastoTotalFixoLoja.upsert(
+    { lojaId, ano, mes, valorTotal },
+    { transaction },
   );
 
-  return Number(total.toFixed(2));
+  return valorTotal;
 };
 
 export const getGastosFixos = async (req, res) => {
   try {
     const { lojaId } = req.params;
-    const gastos = await GastoFixoLoja.findAll({
-      where: { lojaId },
-      order: [["nome", "ASC"]],
-    });
-    res.json(gastos);
+    const referencia = obterMesReferencia(req.query);
+
+    if (!referencia) {
+      return res.status(400).json({ error: "Mês de referência inválido" });
+    }
+
+    const gastos = await resolverGastosFixosDoMes(
+      lojaId,
+      referencia.ano,
+      referencia.mes,
+    );
+
+    return res.json(gastos);
   } catch (err) {
-    res
+    return res
       .status(500)
       .json({ error: "Erro ao buscar gastos fixos", details: err.message });
   }
@@ -85,95 +121,135 @@ export const saveGastosFixos = async (req, res) => {
   try {
     const { lojaId } = req.params;
     const { gastos } = req.body;
+    const referencia = obterMesReferencia(req.body);
+    const alcance = ALCANCES_VALIDOS.has(req.body?.alcance)
+      ? req.body.alcance
+      : "deste_mes_em_diante";
 
     if (!Array.isArray(gastos)) {
       await transaction.rollback();
       return res.status(400).json({ error: "Gastos inválidos" });
     }
 
-    const nomesRecebidos = [];
+    if (!referencia) {
+      await transaction.rollback();
+      return res.status(400).json({ error: "Mês de referência inválido" });
+    }
 
-    for (const gasto of gastos) {
-      const nome = normalizarNomeParaPersistencia(gasto.nome);
-      if (!nome) continue;
+    const recebidos = consolidarGastosRecebidos(gastos);
+    const propagar = alcance !== "somente_mes";
+    const inicioVigencia =
+      alcance === "mes_anterior_e_seguintes"
+        ? mesAnterior(referencia.ano, referencia.mes)
+        : referencia;
 
-      nomesRecebidos.push(nome);
+    const [gastosNoMesSelecionado, gastosNoInicio, quantidadeBase] =
+      await Promise.all([
+        resolverGastosFixosDoMes(lojaId, referencia.ano, referencia.mes, {
+          transaction,
+        }),
+        resolverGastosFixosDoMes(
+          lojaId,
+          inicioVigencia.ano,
+          inicioVigencia.mes,
+          { transaction },
+        ),
+        GastoFixoLoja.count({ where: { lojaId }, transaction }),
+      ]);
 
-      await GastoFixoLoja.upsert(
+    // Mantém a tabela antiga somente como configuração inicial/fallback.
+    if (quantidadeBase === 0) {
+      for (const gasto of recebidos.values()) {
+        await GastoFixoLoja.create(
+          { lojaId, ...gasto },
+          { transaction },
+        );
+      }
+    }
+
+    const nomesAfetados = new Map();
+    for (const gasto of [...gastosNoMesSelecionado, ...gastosNoInicio]) {
+      nomesAfetados.set(normalizarNomeGasto(gasto.nome), gasto.nome);
+    }
+    for (const [chave, gasto] of recebidos) {
+      nomesAfetados.set(chave, gasto.nome);
+    }
+
+    for (const [chave, nomeAnterior] of nomesAfetados) {
+      const gasto = recebidos.get(chave);
+      const nome = gasto?.nome || nomeAnterior;
+
+      await GastoFixoLojaMensal.upsert(
         {
           lojaId,
           nome,
-          valor: Number(gasto.valor || 0),
-          observacao: gasto.observacao || null,
+          ano: inicioVigencia.ano,
+          mes: inicioVigencia.mes,
+          valor: gasto?.valor || 0,
+          observacao: gasto?.observacao || null,
+          propagar,
+          ativo: Boolean(gasto),
         },
         { transaction },
       );
     }
 
-    await GastoFixoLoja.destroy({
-      where:
-        nomesRecebidos.length > 0
-          ? {
-              lojaId,
-              nome: { [Op.notIn]: nomesRecebidos },
-            }
-          : { lojaId },
-      transaction,
-    });
-
-    const gastosAtuais = await GastoFixoLoja.findAll({
-      where: { lojaId },
-      attributes: ["id", "nome"],
+    // Remove duplicidades exatas antigas no mesmo mês, sem apagar o histórico.
+    const versoesDoMes = await GastoFixoLojaMensal.findAll({
+      where: {
+        lojaId,
+        ano: inicioVigencia.ano,
+        mes: inicioVigencia.mes,
+        propagar,
+      },
       order: [["id", "DESC"]],
-      raw: true,
       transaction,
     });
-
-    const nomesJaVistos = new Set();
-    const idsParaRemover = [];
-
-    for (const item of gastosAtuais) {
+    const vistos = new Set();
+    const idsDuplicados = [];
+    for (const item of versoesDoMes) {
       const chave = normalizarNomeGasto(item.nome);
-      if (!chave) {
-        idsParaRemover.push(item.id);
-        continue;
-      }
-
-      if (nomesJaVistos.has(chave)) {
-        idsParaRemover.push(item.id);
-        continue;
-      }
-
-      nomesJaVistos.add(chave);
+      if (vistos.has(chave)) idsDuplicados.push(item.id);
+      else vistos.add(chave);
     }
-
-    if (idsParaRemover.length > 0) {
-      await GastoFixoLoja.destroy({
-        where: { id: { [Op.in]: idsParaRemover } },
+    if (idsDuplicados.length) {
+      await GastoFixoLojaMensal.destroy({
+        where: { id: { [Op.in]: idsDuplicados } },
         transaction,
       });
     }
 
-    const agora = new Date();
-    const ano = agora.getFullYear();
-    const mes = agora.getMonth() + 1;
-    const valorTotal = await calcularTotalFixoLoja(lojaId, transaction);
-
-    await GastoTotalFixoLoja.upsert(
-      {
-        lojaId,
-        ano,
-        mes,
-        valorTotal,
-      },
-      { transaction },
+    const valorTotal = await atualizarTotalMensal(
+      lojaId,
+      referencia.ano,
+      referencia.mes,
+      transaction,
     );
 
+    if (
+      inicioVigencia.ano !== referencia.ano ||
+      inicioVigencia.mes !== referencia.mes
+    ) {
+      await atualizarTotalMensal(
+        lojaId,
+        inicioVigencia.ano,
+        inicioVigencia.mes,
+        transaction,
+      );
+    }
+
     await transaction.commit();
-    res.json({ success: true, ano, mes, valorTotal });
+    return res.json({
+      success: true,
+      ano: referencia.ano,
+      mes: referencia.mes,
+      alcance,
+      inicioVigencia,
+      valorTotal,
+    });
   } catch (err) {
     await transaction.rollback();
-    res
+    return res
       .status(500)
       .json({ error: "Erro ao salvar gastos fixos", details: err.message });
   }

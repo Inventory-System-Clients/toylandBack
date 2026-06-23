@@ -81,6 +81,7 @@ import {
   GastoFixoLoja,
   GastoTotalFixoLoja,
 } from "../models/index.js";
+import { calcularTotalGastosFixosMes } from "../services/gastoFixoMensalService.js";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const VALOR_FICHA_PADRAO_DEFAULT = 2.5;
@@ -181,7 +182,7 @@ const calcularTotalFixoAtualDaLoja = async (lojaId) => {
   return Number(total.toFixed(2));
 };
 
-const obterTotaisFixosMensais = async (lojaId, mesesIntervalo) => {
+const obterTotaisFixosMensaisLegado = async (lojaId, mesesIntervalo) => {
   if (!mesesIntervalo.length) return new Map();
 
   const totaisMensais = await GastoTotalFixoLoja.findAll({
@@ -224,6 +225,33 @@ const obterTotaisFixosMensais = async (lojaId, mesesIntervalo) => {
     }
 
     mapaTotais.set(chave, totalAtual);
+  }
+
+  return mapaTotais;
+};
+
+const obterTotaisFixosMensais = async (lojaId, mesesIntervalo) => {
+  const mapaTotais = new Map();
+
+  for (const { ano, mes } of mesesIntervalo) {
+    const chave = `${ano}-${String(mes).padStart(2, "0")}`;
+    const valorTotal = await calcularTotalGastosFixosMes(lojaId, ano, mes);
+
+    try {
+      await GastoTotalFixoLoja.upsert({
+        lojaId,
+        ano,
+        mes,
+        valorTotal,
+      });
+    } catch (error) {
+      console.warn(
+        "[Relatorio] Falha ao persistir o total fixo mensal:",
+        error.message,
+      );
+    }
+
+    mapaTotais.set(chave, valorTotal);
   }
 
   return mapaTotais;
