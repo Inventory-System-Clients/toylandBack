@@ -1,5 +1,36 @@
-import { EstoqueLoja, Loja, Produto } from "../models/index.js";
+import {
+  EstoqueLoja,
+  Loja,
+  MovimentacaoEstoqueLoja,
+  MovimentacaoEstoqueLojaProduto,
+  Produto,
+} from "../models/index.js";
 import { registrarAuditoriaEstoque } from "../utils/auditoriaEstoque.js";
+
+const registrarAjusteNoHistorico = async ({
+  req,
+  lojaId,
+  ajustes,
+  observacao = "Correção manual de estoque",
+}) => {
+  const itens = ajustes.filter((item) => Number(item.diferenca) !== 0);
+  if (itens.length === 0 || !req.usuario?.id) return;
+
+  const movimento = await MovimentacaoEstoqueLoja.create({
+    lojaId,
+    usuarioId: req.usuario.id,
+    observacao,
+    dataMovimentacao: new Date(),
+  });
+  await MovimentacaoEstoqueLojaProduto.bulkCreate(
+    itens.map((item) => ({
+      movimentacaoEstoqueLojaId: movimento.id,
+      produtoId: item.produtoId,
+      quantidade: Math.abs(Number(item.diferenca)),
+      tipoMovimentacao: Number(item.diferenca) > 0 ? "entrada" : "saida",
+    })),
+  );
+};
 
 // Listar estoque de uma loja
 export const listarEstoqueLoja = async (req, res) => {
@@ -76,6 +107,7 @@ export const atualizarEstoqueLoja = async (req, res) => {
         estoqueMinimo: estoqueMinimo !== undefined ? estoqueMinimo : 0,
       },
     });
+    const quantidadeAnteriorRegistro = created ? 0 : Number(estoque.quantidade);
 
     console.log("📦 [atualizarEstoqueLoja] Estoque atual:", {
       id: estoque.id,
@@ -125,6 +157,16 @@ export const atualizarEstoqueLoja = async (req, res) => {
         estoqueMinimo,
       });
     }
+    await registrarAjusteNoHistorico({
+      req,
+      lojaId,
+      ajustes: [
+        {
+          produtoId,
+          diferenca: Number(quantidade) - quantidadeAnteriorRegistro,
+        },
+      ],
+    });
 
     // Retornar com dados do produto
     const estoqueAtualizado = await EstoqueLoja.findByPk(estoque.id, {
@@ -208,6 +250,7 @@ export const criarOuAtualizarProdutoEstoque = async (req, res) => {
         estoqueMinimo: estoqueMinimo !== undefined ? estoqueMinimo : 0,
       },
     });
+    const quantidadeAnteriorRegistro = created ? 0 : Number(estoque.quantidade);
 
     console.log("📦 [criarOuAtualizarProdutoEstoque] Estoque encontrado:", {
       id: estoque.id,
@@ -257,6 +300,16 @@ export const criarOuAtualizarProdutoEstoque = async (req, res) => {
         estoqueMinimo,
       });
     }
+    await registrarAjusteNoHistorico({
+      req,
+      lojaId,
+      ajustes: [
+        {
+          produtoId,
+          diferenca: Number(quantidade) - quantidadeAnteriorRegistro,
+        },
+      ],
+    });
 
     // Retornar com dados do produto
     const estoqueAtualizado = await EstoqueLoja.findByPk(estoque.id, {
@@ -305,6 +358,7 @@ export const atualizarVariosEstoques = async (req, res) => {
 
     const resultados = [];
     const erros = [];
+    const ajustesHistorico = [];
 
     for (const item of estoques) {
       const { produtoId, quantidade, estoqueMinimo } = item;
@@ -330,6 +384,9 @@ export const atualizarVariosEstoques = async (req, res) => {
             estoqueMinimo: estoqueMinimo !== undefined ? estoqueMinimo : 0,
           },
         });
+        const quantidadeAnteriorRegistro = created
+          ? 0
+          : Number(estoque.quantidade);
 
         if (!created) {
           const quantidadeAnterior = estoque.quantidade;
@@ -370,6 +427,10 @@ export const atualizarVariosEstoques = async (req, res) => {
         });
 
         resultados.push(estoque);
+        ajustesHistorico.push({
+          produtoId,
+          diferenca: Number(quantidade) - quantidadeAnteriorRegistro,
+        });
       } catch (itemError) {
         console.error(`Erro ao processar produto ${produtoId}:`, itemError);
         erros.push({
@@ -382,6 +443,12 @@ export const atualizarVariosEstoques = async (req, res) => {
     console.log(
       `Processados: ${resultados.length} sucessos, ${erros.length} erros`
     );
+    await registrarAjusteNoHistorico({
+      req,
+      lojaId,
+      ajustes: ajustesHistorico,
+      observacao: "Correção manual em lote do estoque",
+    });
 
     res.json({
       message: `${resultados.length} estoques atualizados com sucesso`,
@@ -421,6 +488,17 @@ export const deletarEstoqueLoja = async (req, res) => {
       estoqueMinimoNovo: 0,
       entidadeId: estoque.id,
       observacao: "Remocao manual do item de estoque",
+    });
+    await registrarAjusteNoHistorico({
+      req,
+      lojaId,
+      ajustes: [
+        {
+          produtoId,
+          diferenca: -Number(estoque.quantidade || 0),
+        },
+      ],
+      observacao: "Remoção manual do item de estoque",
     });
 
     await estoque.destroy();

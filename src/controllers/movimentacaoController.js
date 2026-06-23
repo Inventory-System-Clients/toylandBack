@@ -6,6 +6,8 @@ import {
   Produto,
   EstoqueLoja,
   Loja,
+  MovimentacaoEstoqueLoja,
+  MovimentacaoEstoqueLojaProduto,
 } from "../models/index.js";
 import { Op } from "sequelize";
 
@@ -291,6 +293,30 @@ export const registrarMovimentacao = async (req, res) => {
           }
         }
         // Se houver retiradaProduto, não altera estoque da loja
+      }
+
+      const produtosAbastecidos = produtos
+        .map((produto) => ({
+          produtoId: produto.produtoId,
+          quantidade: Number(produto.quantidadeAbastecida) || 0,
+        }))
+        .filter((produto) => produto.produtoId && produto.quantidade > 0);
+
+      if (produtosAbastecidos.length > 0) {
+        const movimentoEstoque = await MovimentacaoEstoqueLoja.create({
+          lojaId: maquina.lojaId,
+          usuarioId: req.usuario.id,
+          observacao: `Abastecimento da máquina ${maquina.nome || maquina.codigo} (${maquina.codigo})`,
+          dataMovimentacao: dataColeta || new Date(),
+        });
+        await MovimentacaoEstoqueLojaProduto.bulkCreate(
+          produtosAbastecidos.map((produto) => ({
+            movimentacaoEstoqueLojaId: movimentoEstoque.id,
+            produtoId: produto.produtoId,
+            quantidade: produto.quantidade,
+            tipoMovimentacao: "saida",
+          })),
+        );
       }
     }
 
