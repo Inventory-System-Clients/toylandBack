@@ -174,6 +174,34 @@ const startServer = async () => {
     }
 
     // Criar admin padrão se não existir
+    if (!colunasMaquinas.jogadas_boas_por_pelucia) {
+      const { DataTypes } = await import("sequelize");
+      await queryInterface.addColumn("maquinas", "jogadas_boas_por_pelucia", {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        comment: "Quantidade ideal de jogadas para sair uma pelÃºcia",
+      });
+      console.log(
+        "âœ… Coluna de jogadas boas por pelÃºcia adicionada Ã s mÃ¡quinas!",
+      );
+    }
+
+    const colunasGastoVariavel =
+      await queryInterface.describeTable("GastoVariavel");
+    if (!colunasGastoVariavel.usuarioId) {
+      const { DataTypes } = await import("sequelize");
+      await queryInterface.addColumn("GastoVariavel", "usuarioId", {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: { model: "usuarios", key: "id" },
+        onUpdate: "CASCADE",
+        onDelete: "SET NULL",
+      });
+      console.log(
+        "âœ… Coluna de responsÃ¡vel adicionada aos gastos variÃ¡veis!",
+      );
+    }
+
     const { Usuario } = await import("./models/index.js");
     const adminEmail = process.env.ADMIN_EMAIL || "admin@agarramais.com";
     const adminExistente = await Usuario.findOne({
