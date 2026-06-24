@@ -2330,7 +2330,7 @@ export const alertasMovimentacaoIn = async (req, res) => {
   }
 };
 
-// --- ALERTAS DE BOM DESEMPENHO ---
+// --- ALERTAS DE PELÚCIA SAINDO ABAIXO DO ESPERADO ---
 export const alertasBomDesempenho = async (req, res) => {
   try {
     const maquinas = await Maquina.findAll({
@@ -2342,9 +2342,7 @@ export const alertasBomDesempenho = async (req, res) => {
     for (const maquina of maquinas) {
       if (
         !maquina.jogadasBoasPorPelucia ||
-        Number(maquina.jogadasBoasPorPelucia) <= 0 ||
-        !maquina.valorFicha ||
-        Number(maquina.valorFicha) <= 0
+        Number(maquina.jogadasBoasPorPelucia) <= 0
       ) {
         continue;
       }
@@ -2356,9 +2354,7 @@ export const alertasBomDesempenho = async (req, res) => {
         attributes: [
           "id",
           "usuarioId",
-          "contadorOut",
           "contadorIn",
-          "fichas",
           "sairam",
           "dataColeta",
         ],
@@ -2384,36 +2380,56 @@ export const alertasBomDesempenho = async (req, res) => {
       }
 
       const diffIn = (atual.contadorIn || 0) - (anterior.contadorIn || 0);
-      const valorFicha = Number(maquina.valorFicha);
-      const expectedDiff =
-        Number(maquina.jogadasBoasPorPelucia) * valorFicha *
-        (atual.sairam || 1);
+      const quantidadeSaiu = Number(atual.sairam || 0);
+      const jogadasEsperadas = Number(maquina.jogadasBoasPorPelucia);
 
-      if (diffIn > expectedDiff) {
+      if (diffIn <= 0 || quantidadeSaiu <= 0) {
+        continue;
+      }
+
+      const jogadasPorPelucia = Number((diffIn / quantidadeSaiu).toFixed(2));
+      const contadorInEsperado = Number(
+        (jogadasEsperadas * quantidadeSaiu).toFixed(2),
+      );
+
+      if (jogadasPorPelucia !== jogadasEsperadas) {
+        const estaAbaixoDaMeta = jogadasPorPelucia < jogadasEsperadas;
         const metadadosAtual = montarMetadadosMovimentacao(atual);
         const metadadosAnterior = montarMetadadosMovimentacao(anterior);
         alertas.push({
-          id: `${maquina.id}-${atual.id}-bomdesempenho`,
-          tipo: "bom_desempenho",
+          id: `${maquina.id}-${atual.id}-${
+            estaAbaixoDaMeta ? "jogadas-abaixo" : "jogadas-acima"
+          }`,
+          tipo: estaAbaixoDaMeta
+            ? "jogadas_abaixo_do_esperado"
+            : "jogadas_acima_do_esperado",
+          direcao: estaAbaixoDaMeta ? "abaixo" : "acima",
           maquinaId: maquina.id,
           maquinaNome: maquina.nome,
           lojaNome: maquina.loja?.nome || maquina.lojaNome || null,
           contador_in: atual.contadorIn || 0,
           contador_in_anterior: anterior.contadorIn || 0,
-          fichas: atual.fichas,
-          sairam: atual.sairam || 0,
-          jogadasBoasPorPelucia: Number(maquina.jogadasBoasPorPelucia),
-          valorFicha: valorFicha,
+          sairam: quantidadeSaiu,
+          jogadasBoasPorPelucia: jogadasEsperadas,
+          jogadasPorPelucia,
           diffIn,
-          expectedDiff,
-          diferenca: diffIn - expectedDiff,
+          contadorInEsperado,
+          diferencaJogadas: Number(
+            Math.abs(jogadasEsperadas - jogadasPorPelucia).toFixed(2),
+          ),
           ...metadadosAnterior,
           ...metadadosAtual,
           usuarioAnterior: metadadosAnterior.usuarioNome,
           usuarioAtual: metadadosAtual.usuarioNome,
           dataMovimentacaoAnterior: metadadosAnterior.dataMovimentacao,
           dataMovimentacaoAtual: metadadosAtual.dataMovimentacao,
-          mensagem: `Desempenho acima do esperado: IN aumentou ${diffIn} desde a última coleta, sendo R$ ${Number(diferença || diffIn - expectedDiff).toFixed(2)} acima do esperado para ${atual.sairam || 1} pelúcia(s) (esperado R$ ${expectedDiff}).`,
+          mensagem: `A pelúcia está saindo ${
+            estaAbaixoDaMeta ? "com menos jogadas" : "com mais jogadas"
+          } que o esperado: na loja ${
+            maquina.loja?.nome || "não informada"
+          }, máquina ${
+            maquina.nome || maquina.codigo || maquina.id
+          }, saiu com ${jogadasPorPelucia} jogada(s) por pelúcia; o esperado era ${jogadasEsperadas}.`,
         });
       }
     }
@@ -2421,14 +2437,8 @@ export const alertasBomDesempenho = async (req, res) => {
     res.json({ alertas });
   } catch (error) {
     res.status(500).json({
-      error: "Erro ao buscar alertas de bom desempenho",
+      error: "Erro ao buscar alertas de jogadas fora do esperado",
       message: error.message,
     });
-  }
-};
-  } catch (error) {
-    res
-      .status(500)
-      .json({ error: "Erro ao buscar alertas IN", message: error.message });
   }
 };
