@@ -11,6 +11,7 @@ import {
   alertasMovimentacaoOut,
   alertasMovimentacaoIn,
   alertasBomDesempenho,
+  machinePayTotalMes,
 } from "../controllers/relatorioController.js";
 import { alertasAbastecimentoIncompleto } from "../controllers/movimentacaoController.js";
 import { autenticar, autorizarRole } from "../middlewares/auth.js";
@@ -61,6 +62,12 @@ router.get(
   autenticar,
   autorizarRole("ADMIN"),
   alertasBomDesempenho,
+);
+router.get(
+  "/machine-pay-mes",
+  autenticar,
+  autorizarRole("ADMIN"),
+  machinePayTotalMes,
 );
 router.get(
   "/performance-maquinas",

@@ -82,6 +82,7 @@ import {
   GastoTotalFixoLoja,
 } from "../models/index.js";
 import { calcularTotalGastosFixosMes } from "../services/gastoFixoMensalService.js";
+import { consultarFechamentoMachinePay } from "../services/machinePayService.js";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const VALOR_FICHA_PADRAO_DEFAULT = 2.5;
@@ -105,6 +106,16 @@ const montarMetadadosMovimentacao = (movimentacao) => ({
     movimentacao?.dataColeta ?? movimentacao?.createdAt,
   ),
 });
+
+const formatarDataMachinePay = (data) => {
+  if (!(data instanceof Date) || Number.isNaN(data.getTime())) return null;
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, "0");
+  const dia = String(data.getDate()).padStart(2, "0");
+  const hora = String(data.getHours()).padStart(2, "0");
+  const minuto = String(data.getMinutes()).padStart(2, "0");
+  return `${ano}-${mes}-${dia} ${hora}:${minuto}`;
+};
 
 const normalizarNomeGasto = (nomeOriginal) =>
   String(nomeOriginal || "")
@@ -769,6 +780,82 @@ export const dashboardRelatorio = async (req, res) => {
     console.error("Erro Crítico no Dashboard:", error);
     res.status(500).json({
       error: "Erro interno ao processar dashboard.",
+      details: error.message,
+    });
+  }
+};
+
+export const machinePayTotalMes = async (req, res) => {
+  try {
+    const hoje = new Date();
+    const inicio = new Date(hoje.getFullYear(), hoje.getMonth(), 1, 0, 0, 0);
+    const fim = hoje;
+
+    const maquinas = await Maquina.findAll({
+      where: {
+        ativo: true,
+        machinePayPosId: {
+          [Op.ne]: null,
+          [Op.not]: "",
+        },
+      },
+      attributes: ["id", "nome", "machinePayPosId"],
+      raw: true,
+    });
+
+    if (!maquinas.length) {
+      return res.json({
+        liquidoTotal: 0,
+        brutoTotal: 0,
+        taxaTotal: 0,
+        maquinas: [],
+      });
+    }
+
+    const resultados = await Promise.allSettled(
+      maquinas.map((maquina) =>
+        consultarFechamentoMachinePay({
+          posId: maquina.machinePayPosId,
+          inicio: formatarDataMachinePay(inicio),
+          fim: formatarDataMachinePay(fim),
+        }).then((dados) => ({
+          ...dados,
+          maquinaId: maquina.id,
+          nome: maquina.nome,
+          machinePayPosId: maquina.machinePayPosId,
+        })),
+      ),
+    );
+
+    let liquidoTotal = 0;
+    let brutoTotal = 0;
+    let taxaTotal = 0;
+
+    const maquinasDados = resultados.map((resultado, index) => {
+      if (resultado.status !== "fulfilled") {
+        return {
+          ...maquinas[index],
+          erro: resultado.reason?.message || String(resultado.reason),
+        };
+      }
+
+      liquidoTotal += Number(resultado.value.liquido || 0);
+      brutoTotal += Number(resultado.value.brutoComTaxasMp || 0);
+      taxaTotal += Number(resultado.value.taxas || 0);
+
+      return resultado.value;
+    });
+
+    res.json({
+      liquidoTotal: Number(liquidoTotal.toFixed(2)),
+      brutoTotal: Number(brutoTotal.toFixed(2)),
+      taxaTotal: Number(taxaTotal.toFixed(2)),
+      maquinas: maquinasDados,
+    });
+  } catch (error) {
+    console.error("Erro ao carregar total Machine Pay do mês:", error);
+    res.status(500).json({
+      error: "Erro ao carregar total Machine Pay do mês",
       details: error.message,
     });
   }
@@ -2351,13 +2438,7 @@ export const alertasBomDesempenho = async (req, res) => {
         where: { maquinaId: maquina.id },
         order: [["dataColeta", "DESC"]],
         limit: 2,
-        attributes: [
-          "id",
-          "usuarioId",
-          "contadorIn",
-          "sairam",
-          "dataColeta",
-        ],
+        attributes: ["id", "usuarioId", "contadorIn", "sairam", "dataColeta"],
         include: [
           {
             model: Usuario,
