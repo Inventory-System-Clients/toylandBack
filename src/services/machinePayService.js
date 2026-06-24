@@ -2,6 +2,8 @@ const DEFAULT_LOGIN_URL =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/";
 const DEFAULT_API_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=stats&posid={posid}&dataini={inicio64}&datafim={fim64}&chave={chave}";
+const DEFAULT_FECHAMENTO_TEMPLATE =
+  "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=fechamento&tipo=maq&dataini={inicio64}&datafim={fim64}&valor={valor64}&id={id}&pos_id={posid}";
 
 const required = (name) => {
   const value = process.env[name];
@@ -118,6 +120,14 @@ const parseStats = (html) => {
 const formatInicio = (value) => String(value || "").slice(0, 10);
 const formatFim = (value) => String(value || "").slice(0, 16);
 
+const formatMoneyBr = (value) => {
+  const number = Number(value || 0);
+  return `R$ ${(Number.isFinite(number) ? number : 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
 const buildStatsUrl = ({ posId, inicio, fim }) => {
   const inicioFormatado = formatInicio(inicio);
   const fimFormatado = formatFim(fim);
@@ -143,6 +153,43 @@ const buildStatsUrl = ({ posId, inicio, fim }) => {
       "{chave}",
       encodeURIComponent(process.env.MACHINE_PAY_CHAVE || ""),
     )
+  );
+};
+
+const buildFechamentoUrl = ({ posId, inicio, fim, valor = 0 }) => {
+  const inicioFormatado = formatInicio(inicio);
+  const fimFormatado = formatFim(fim);
+  const loginMachinePay = required("MACHINE_PAY_LOGIN");
+
+  return (
+    (process.env.MACHINE_PAY_FECHAMENTO_TEMPLATE ||
+      DEFAULT_FECHAMENTO_TEMPLATE)
+      .replaceAll("{posid}", encodeURIComponent(posId))
+      .replaceAll("{pos_id}", encodeURIComponent(posId))
+      .replaceAll("{inicio}", encodeURIComponent(inicioFormatado))
+      .replaceAll("{fim}", encodeURIComponent(fimFormatado))
+      .replaceAll("{dataInicio}", encodeURIComponent(inicioFormatado))
+      .replaceAll("{dataFim}", encodeURIComponent(fimFormatado))
+      .replaceAll(
+        "{inicio64}",
+        encodeURIComponent(encodeBase64(inicioFormatado)),
+      )
+      .replaceAll("{fim64}", encodeURIComponent(encodeBase64(fimFormatado)))
+      .replaceAll(
+        "{dataInicio64}",
+        encodeURIComponent(encodeBase64(inicioFormatado)),
+      )
+      .replaceAll(
+        "{dataFim64}",
+        encodeURIComponent(encodeBase64(fimFormatado)),
+      )
+      .replaceAll("{valor}", encodeURIComponent(formatMoneyBr(valor)))
+      .replaceAll(
+        "{valor64}",
+        encodeURIComponent(encodeBase64(formatMoneyBr(valor))),
+      )
+      .replaceAll("{id}", encodeURIComponent(loginMachinePay))
+      .replaceAll("{usr}", encodeURIComponent(loginMachinePay))
   );
 };
 
@@ -198,4 +245,35 @@ export const consultarFechamentoMachinePay = async ({
   }
 
   return parseStats(body);
+};
+
+export const fecharFechamentoMachinePay = async ({
+  posId,
+  inicio,
+  fim,
+  valor = 0,
+}) => {
+  const { cookies, loginUrl } = await login();
+  const url = buildFechamentoUrl({ posId, inicio, fim, valor });
+  const response = await fetch(url, {
+    headers: {
+      Accept: "*/*",
+      Cookie: cookies,
+      Referer: loginUrl,
+      "X-Requested-With": "XMLHttpRequest",
+    },
+  });
+  const body = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Machine Pay respondeu com status ${response.status}`);
+  }
+
+  const concluido =
+    /maquinasFechamentoConcluido|fechamento\s+conclu/i.test(body);
+
+  return {
+    concluido,
+    status: response.status,
+  };
 };

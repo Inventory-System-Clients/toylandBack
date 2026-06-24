@@ -10,7 +10,10 @@ import {
   Maquina,
   Produto,
 } from "../models/index.js";
-import { consultarFechamentoMachinePay } from "../services/machinePayService.js";
+import {
+  consultarFechamentoMachinePay,
+  fecharFechamentoMachinePay,
+} from "../services/machinePayService.js";
 import { calcularTotalGastosFixosMes } from "../services/gastoFixoMensalService.js";
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -220,6 +223,99 @@ const calcularGastoVariavelPeriodo = async (lojaId, inicio, fim) => {
   });
 
   return Number(total || 0);
+};
+
+const buscarContadorInPeriodo = async (maquinaId, inicio, fim) => {
+  const leituraInicio =
+    (await Movimentacao.findOne({
+      where: {
+        maquinaId,
+        contadorIn: { [Op.ne]: null },
+        dataColeta: { [Op.lte]: inicio },
+      },
+      attributes: ["id", "contadorIn", "dataColeta"],
+      order: [["dataColeta", "DESC"]],
+    })) ||
+    (await Movimentacao.findOne({
+      where: {
+        maquinaId,
+        contadorIn: { [Op.ne]: null },
+        dataColeta: { [Op.gte]: inicio, [Op.lte]: fim },
+      },
+      attributes: ["id", "contadorIn", "dataColeta"],
+      order: [["dataColeta", "ASC"]],
+    }));
+
+  const leituraFim = await Movimentacao.findOne({
+    where: {
+      maquinaId,
+      contadorIn: { [Op.ne]: null },
+      dataColeta: { [Op.lte]: fim },
+    },
+    attributes: ["id", "contadorIn", "dataColeta"],
+    order: [["dataColeta", "DESC"]],
+  });
+
+  if (!leituraInicio || !leituraFim) return null;
+
+  const contadorInicio = Number(leituraInicio.contadorIn);
+  const contadorFim = Number(leituraFim.contadorIn);
+
+  if (!Number.isFinite(contadorInicio) || !Number.isFinite(contadorFim)) {
+    return null;
+  }
+
+  const diferencaIn = contadorFim - contadorInicio;
+  if (diferencaIn < 0) return null;
+
+  return {
+    contadorInicio,
+    contadorFim,
+    diferencaIn,
+    leituraInicio: leituraInicio.dataColeta,
+    leituraFim: leituraFim.dataColeta,
+  };
+};
+
+const calcularDinheiroPeloContador = async ({
+  maquinaId,
+  inicio,
+  fim,
+  valorDigital,
+  fallback,
+}) => {
+  const maquina = await Maquina.findByPk(maquinaId, {
+    attributes: ["id", "valorFicha"],
+  });
+  const valorJogada = Number(maquina?.valorFicha || 0);
+  const contadores = await buscarContadorInPeriodo(maquinaId, inicio, fim);
+
+  if (!contadores || !Number.isFinite(valorJogada) || valorJogada <= 0) {
+    return {
+      valor: Number(fallback || 0),
+      calculado: false,
+      motivo: "Sem contador IN ou valor da jogada suficiente para calcular.",
+      contadores,
+      valorJogada,
+    };
+  }
+
+  const faturamentoContador = Number(
+    (contadores.diferencaIn * valorJogada).toFixed(2),
+  );
+  const valorCalculado = Number(
+    Math.max(faturamentoContador - Number(valorDigital || 0), 0).toFixed(2),
+  );
+
+  return {
+    valor: valorCalculado,
+    calculado: true,
+    motivo: null,
+    contadores,
+    valorJogada,
+    faturamentoContador,
+    valorDigital: Number(valorDigital || 0),
+  };
 };
 
 const calcularGastoProdutosSaidaPeriodo = async (lojaId, inicio, fim) => {
@@ -517,6 +613,20 @@ const registroDinheiroController = {
       const valorCartaoLiquidoNumero = Number(
         Math.max(valorCartaoNumero - taxaDeCartao, 0).toFixed(2),
       );
+      const valorDinheiroOriginal = normalizarValorMonetario(valorDinheiro);
+      const dinheiroPeloContador = !ehRegistroTotalLoja
+        ? await calcularDinheiroPeloContador({
+            maquinaId: maquina,
+            inicio: inicioPeriodo,
+            fim: fimPeriodo,
+            valorDigital: valorCartaoPixNumero,
+            fallback: valorDinheiroOriginal,
+          })
+        : {
+            valor: valorDinheiroOriginal,
+            calculado: false,
+            motivo: null,
+          };
 
       const dadosRegistro = {
         lojaId: loja,
@@ -524,7 +634,7 @@ const registroDinheiroController = {
         registrarTotalLoja: ehRegistroTotalLoja,
         inicio,
         fim,
-        valorDinheiro: normalizarValorMonetario(valorDinheiro),
+        valorDinheiro: dinheiroPeloContador.valor,
         valorCartaoPix: valorCartaoPixNumero,
         valorCartaoPixLiquido: valorCartaoPixLiquidoNumero,
         valorPix: valorPixNumero,
@@ -591,7 +701,51 @@ const registroDinheiroController = {
         }
 
         await transaction.commit();
-        return res.status(201).json(registro);
+
+        let fechamentoMachinePay = {
+          executado: false,
+          concluido: false,
+          erro: null,
+        };
+
+        if (!ehRegistroTotalLoja && maquina) {
+          try {
+            const maquinaFechamento = await Maquina.findByPk(maquina, {
+              attributes: ["id", "machinePayPosId"],
+            });
+
+            if (maquinaFechamento?.machinePayPosId) {
+              const resultadoFechamento = await fecharFechamentoMachinePay({
+                posId: maquinaFechamento.machinePayPosId,
+                inicio,
+                fim,
+                valor: dadosRegistro.valorDinheiro,
+              });
+
+              fechamentoMachinePay = {
+                executado: true,
+                concluido: resultadoFechamento.concluido,
+                erro: null,
+              };
+            }
+          } catch (machinePayError) {
+            console.error(
+              "[MachinePay] Erro ao executar fechamento:",
+              machinePayError,
+            );
+            fechamentoMachinePay = {
+              executado: true,
+              concluido: false,
+              erro: machinePayError.message,
+            };
+          }
+        }
+
+        return res.status(201).json({
+          ...registro.toJSON(),
+          fechamentoMachinePay,
+          dinheiroPeloContador,
+        });
       } catch (dbError) {
         await transaction.rollback();
         throw dbError;
