@@ -404,10 +404,11 @@ const registroDinheiroController = {
         ],
       });
 
-      const fim = new Date();
+      const agora = new Date();
       const inicio = ultimoRegistro?.fim
         ? new Date(new Date(ultimoRegistro.fim).getTime() + 60 * 1000)
-        : new Date(fim.getTime() - 7 * DAY_IN_MS);
+        : new Date(agora.getTime() - 7 * DAY_IN_MS);
+      const fim = inicio > agora ? inicio : agora;
 
       return res.json({
         inicio: inicio.toISOString(),
@@ -531,9 +532,24 @@ const registroDinheiroController = {
         },
       });
       if (registroSobreposto) {
+        const proximoInicio = new Date(
+          new Date(registroSobreposto.fim).getTime() + 60 * 1000,
+        );
+        const agora = new Date();
+        const proximoFim = proximoInicio > agora ? proximoInicio : agora;
+
         return res.status(409).json({
           error:
-            "Este período se sobrepõe a um fechamento já registrado para o mesmo local.",
+            "Este período se sobrepõe a um fechamento já registrado para o mesmo local. Ajuste o início para depois do fechamento existente.",
+          conflito: {
+            id: registroSobreposto.id,
+            inicio: registroSobreposto.inicio,
+            fim: registroSobreposto.fim,
+          },
+          proximoPeriodo: {
+            inicio: proximoInicio.toISOString(),
+            fim: proximoFim.toISOString(),
+          },
         });
       }
 
