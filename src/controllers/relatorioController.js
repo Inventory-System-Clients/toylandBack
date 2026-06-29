@@ -7,7 +7,8 @@ export const rankingLucroBrutoLojas = async (req, res) => {
         .status(400)
         .json({ error: "dataInicio e dataFim são obrigatórios" });
     }
-    const lojas = await Loja.findAll({ where: { ativo: true }, raw: true });
+    const lojas = (await Loja.findAll({ where: { ativo: true }, raw: true }))
+      .filter((loja) => !ehLojaSomenteEstoque(loja));
     const respostas = await Promise.allSettled(
       lojas.map((loja) =>
         gerarRelatorioImpressaoPorLoja({
@@ -86,6 +87,9 @@ import { consultarFechamentoMachinePay } from "../services/machinePayService.js"
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const VALOR_FICHA_PADRAO_DEFAULT = 2.5;
+
+const ehLojaSomenteEstoque = (loja) =>
+  String(loja?.nome || "").trim().toLowerCase() === "garagem";
 
 const formatarDataMovimentacao = (valor) => {
   if (!valor) return null;
@@ -1395,6 +1399,12 @@ export const gerarRelatorioImpressaoPorLoja = async ({
     throw erro;
   }
 
+  if (ehLojaSomenteEstoque(loja)) {
+    const erro = new Error("Esta loja e somente estoque e nao gera relatorio financeiro.");
+    erro.status = 400;
+    throw erro;
+  }
+
   const valorFichaPadraoLoja = Number(
     loja.valorFichaPadrao ?? VALOR_FICHA_PADRAO_DEFAULT,
   );
@@ -2069,7 +2079,8 @@ export const relatorioTodasLojas = async (req, res) => {
         .json({ error: "dataInicio e dataFim são obrigatórios" });
     }
 
-    const lojas = await Loja.findAll({ where: { ativo: true }, raw: true });
+    const lojas = (await Loja.findAll({ where: { ativo: true }, raw: true }))
+      .filter((loja) => !ehLojaSomenteEstoque(loja));
 
     const respostas = await Promise.allSettled(
       lojas.map((loja) =>
