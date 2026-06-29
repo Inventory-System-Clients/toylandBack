@@ -1700,6 +1700,39 @@ export const gerarRelatorioImpressaoPorLoja = async ({
     });
   });
 
+  const idsMaquinasComFechamento = Object.keys(valoresPorMaquina);
+  const idsMaquinasSemMovimentacao = idsMaquinasComFechamento.filter(
+    (maquinaId) => !dadosPorMaquina[maquinaId],
+  );
+
+  if (idsMaquinasSemMovimentacao.length > 0) {
+    const maquinasSemMovimentacao = await Maquina.findAll({
+      where: {
+        lojaId,
+        id: { [Op.in]: idsMaquinasSemMovimentacao },
+      },
+      attributes: ["id", "codigo", "nome", "valorFicha"],
+      raw: true,
+    });
+
+    maquinasSemMovimentacao.forEach((maquina) => {
+      dadosPorMaquina[maquina.id] = {
+        maquina: {
+          id: maquina.id,
+          codigo: maquina.codigo,
+          nome: maquina.nome,
+          valorFicha: maquina.valorFicha,
+        },
+        fichas: 0,
+        totalSairam: 0,
+        totalAbastecidas: 0,
+        numMovimentacoes: 0,
+        produtosSairam: {},
+        produtosEntraram: {},
+      };
+    });
+  }
+
   const produtosSairam = Object.values(produtosSairamMap).sort(
     (a, b) => b.quantidade - a.quantidade,
   );
@@ -1902,6 +1935,7 @@ export const gerarRelatorioImpressaoPorLoja = async ({
       valorCartaoPixMaquinasLiquido: Number(
         totaisMaquinasRegistro.cartaoPixLiquido.toFixed(2),
       ),
+      quantidadeRegistrosDinheiro: registrosDinheiro.length,
       valorBrutoMaquinas,
       valorLiquidoMaquinas,
       valorBrutoConsolidadoLojaMaquinas,
@@ -1910,6 +1944,39 @@ export const gerarRelatorioImpressaoPorLoja = async ({
       valorSangriaCalculadoNotasPeriodo,
       quantidadeRegistrosSangria: registrosSangria.length,
       ticketPorPremioTotal,
+    },
+    dinheiro: {
+      quantidadeRegistros: registrosDinheiro.length,
+      registros: registrosDinheiro.map((registro) => ({
+        id: registro.id,
+        lojaId: registro.lojaId ?? registro.lojaid,
+        maquinaId: registro.maquinaId ?? registro.maquinaid,
+        registrarTotalLoja:
+          registro.registrarTotalLoja ?? registro.registrar_total_loja,
+        inicio: registro.inicio,
+        fim: registro.fim,
+        valorDinheiro: obterNumeroRegistro(
+          registro,
+          "valorDinheiro",
+          "valor_dinheiro",
+        ),
+        valorCartaoPix: obterNumeroRegistro(
+          registro,
+          "valorCartaoPix",
+          "valor_cartao_pix",
+        ),
+        valorPix: obterNumeroRegistro(registro, "valorPix", "valor_pix"),
+        valorCartao: obterNumeroRegistro(
+          registro,
+          "valorCartao",
+          "valor_cartao",
+        ),
+        taxaDeCartao: obterNumeroRegistro(
+          registro,
+          "taxaDeCartao",
+          "taxa_de_cartao",
+        ),
+      })),
     },
     sangria: {
       totalPeriodo: valorSangriaTotalPeriodo,
