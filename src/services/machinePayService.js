@@ -1,3 +1,5 @@
+import WebSocketClient from "ws";
+
 const DEFAULT_LOGIN_URL =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/";
 const DEFAULT_API_TEMPLATE =
@@ -526,18 +528,84 @@ export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
   };
 };
 
+const publicarMqttWebSocket = async (posId, valorFinal, idwebhook) => {
+  const dominio = process.env.MACHINE_PAY_WS_DOMINIO || "cyberpix.com.br";
+  const token = process.env.MACHINE_PAY_WS_TOKEN || "1";
+  const usuario = process.env.MACHINE_PAY_WS_USUARIO || "1";
+  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const wsUrl = `wss://${dominio}:65501/?token=${encodeURIComponent(token)}&scope=panel`;
+
+  const { cookies } = await login();
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocketClient(wsUrl, {
+      headers: {
+        Cookie: cookies,
+        Origin: loginUrl.replace(/\/$/, ""),
+      },
+      rejectUnauthorized: false,
+    });
+
+    let settled = false;
+    const done = (ok, err) => {
+      if (settled) return;
+      settled = true;
+      try { ws.close(); } catch {}
+      ok ? resolve() : reject(err);
+    };
+
+    const timeout = setTimeout(
+      () => done(false, new Error("Timeout ao conectar WebSocket Machine Pay")),
+      10000,
+    );
+
+    ws.on("open", () => {
+      ws.send(JSON.stringify({ acao: "inscrever", canal: String(posId) }));
+      ws.send(
+        JSON.stringify({
+          acao: "publicar",
+          canal: String(posId),
+          mensagem: {
+            origem: usuario,
+            dados: JSON.stringify({ retorno: valorFinal, idwebhook }),
+          },
+        }),
+      );
+      clearTimeout(timeout);
+      setTimeout(() => done(true), 1500);
+    });
+
+    ws.on("error", (err) =>
+      done(false, new Error(`WebSocket Machine Pay: ${err.message}`)),
+    );
+  });
+};
+
 export const enviarCreditosMqttMachinePay = async ({ posId, creditos = 1 }) => {
+  const idwebhook = Math.floor(
+    Math.random() * 900000000000 + 100000000000,
+  ).toString();
+  const valorFinal = formatDecimalMachinePay(creditos);
+
+  let wsOk = false;
+  let wsErro = null;
+  try {
+    await publicarMqttWebSocket(posId, valorFinal, idwebhook);
+    wsOk = true;
+  } catch (err) {
+    wsErro = err.message;
+  }
+
   const method = (process.env.MACHINE_PAY_MQTT_METHOD || "POST").toUpperCase();
   const url = replaceMachinePayTokens({
     template: process.env.MACHINE_PAY_MQTT_TEMPLATE || DEFAULT_MQTT_TEMPLATE,
     posId,
     creditos,
   });
-  const idwebhook = `${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
   const formData = new URLSearchParams({
     acao: process.env.MACHINE_PAY_MQTT_ACAO || "creditar",
     pos_id: String(posId),
-    valor: formatDecimalMachinePay(creditos),
+    valor: valorFinal,
     idwebhook,
     origem: process.env.MACHINE_PAY_MQTT_ORIGEM || "1",
     tpagto: process.env.MACHINE_PAY_MQTT_TPAGTO || "Manual",
@@ -546,14 +614,12 @@ export const enviarCreditosMqttMachinePay = async ({ posId, creditos = 1 }) => {
 
   const { body, status } = await fetchMachinePay(url, {
     method,
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-    },
+    headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
     body: formData,
   });
   const json = tryParseJson(body);
   const text = normalizarTexto(stripHtml(body));
-  const sucesso =
+  const dbOk =
     json?.ok === true ||
     json?.status === "ok" ||
     json?.success === true ||
@@ -561,10 +627,12 @@ export const enviarCreditosMqttMachinePay = async ({ posId, creditos = 1 }) => {
 
   return {
     httpStatus: status,
-    sucesso,
+    sucesso: wsOk && dbOk,
+    wsOk,
+    wsErro,
     creditos: Number(creditos || 1),
     online: json?.stsock ? normalizarTexto(json.stsock) === "online" : null,
-    idwebhook: json?.idwebhook || null,
+    idwebhook: json?.idwebhook || idwebhook,
     resposta: json || text.slice(0, 500),
   };
 };
