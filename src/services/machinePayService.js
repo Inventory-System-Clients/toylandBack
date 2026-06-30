@@ -4,6 +4,12 @@ const DEFAULT_API_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=stats&posid={posid}&dataini={inicio64}&datafim={fim64}&chave={chave}";
 const DEFAULT_FECHAMENTO_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=fechamento&tipo=maq&dataini={inicio64}&datafim={fim64}&valor={valor64}&id={id}&pos_id={posid}";
+const DEFAULT_STATUS_TEMPLATE =
+  "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=status&posid={posid}&chave={chave}";
+const DEFAULT_TABELA_DINAMICA_TEMPLATE =
+  "https://www.cyberpix.com.br/pix-adesivo-clientes/tabela_dinamica.php?filtro=todos";
+const DEFAULT_MQTT_TEMPLATE =
+  "https://www.cyberpix.com.br/pix-adesivo-clientes/salvar_credito_mqtt.php";
 
 const required = (name) => {
   const value = process.env[name];
@@ -128,6 +134,11 @@ const formatMoneyBr = (value) => {
   })}`;
 };
 
+const formatDecimalMachinePay = (value) => {
+  const number = Number(value || 0);
+  return (Number.isFinite(number) ? number : 0).toFixed(2);
+};
+
 const buildStatsUrl = ({ posId, inicio, fim }) => {
   const inicioFormatado = formatInicio(inicio);
   const fimFormatado = formatFim(fim);
@@ -154,6 +165,212 @@ const buildStatsUrl = ({ posId, inicio, fim }) => {
       encodeURIComponent(process.env.MACHINE_PAY_CHAVE || ""),
     )
   );
+};
+
+const replaceMachinePayTokens = ({
+  template,
+  posId,
+  inicio,
+  fim,
+  creditos = 1,
+}) => {
+  const inicioFormatado = formatInicio(inicio);
+  const fimFormatado = formatFim(fim);
+
+  return template
+    .replaceAll("{posid}", encodeURIComponent(posId))
+    .replaceAll("{pos_id}", encodeURIComponent(posId))
+    .replaceAll("{inicio}", encodeURIComponent(inicioFormatado))
+    .replaceAll("{fim}", encodeURIComponent(fimFormatado))
+    .replaceAll("{dataInicio}", encodeURIComponent(inicioFormatado))
+    .replaceAll("{dataFim}", encodeURIComponent(fimFormatado))
+    .replaceAll("{inicio64}", encodeURIComponent(encodeBase64(inicioFormatado)))
+    .replaceAll("{fim64}", encodeURIComponent(encodeBase64(fimFormatado)))
+    .replaceAll(
+      "{dataInicio64}",
+      encodeURIComponent(encodeBase64(inicioFormatado)),
+    )
+    .replaceAll(
+      "{dataFim64}",
+      encodeURIComponent(encodeBase64(fimFormatado)),
+    )
+    .replaceAll("{creditos}", encodeURIComponent(creditos))
+    .replaceAll("{creditos64}", encodeURIComponent(encodeBase64(creditos)))
+    .replaceAll(
+      "{chave}",
+      encodeURIComponent(process.env.MACHINE_PAY_CHAVE || ""),
+    );
+};
+
+const fetchMachinePay = async (url, options = {}) => {
+  const { cookies, loginUrl } = await login();
+  const response = await fetch(url, {
+    method: options.method || "GET",
+    headers: {
+      Accept: "*/*",
+      Cookie: cookies,
+      Referer: loginUrl,
+      "X-Requested-With": "XMLHttpRequest",
+      ...(options.headers || {}),
+    },
+    body: options.body,
+  });
+  const body = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`Machine Pay respondeu com status ${response.status}`);
+  }
+
+  return { status: response.status, body };
+};
+
+const tryParseJson = (body) => {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+};
+
+const normalizarTexto = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const parseStatus = (body) => {
+  const json = tryParseJson(body);
+  const rawStatus =
+    json?.stsock ??
+    json?.status ??
+    json?.online ??
+    json?.conectado ??
+    json?.connected ??
+    json?.maquina?.status ??
+    json?.maquina?.online ??
+    null;
+
+  if (rawStatus !== null && rawStatus !== undefined) {
+    const normalized = normalizarTexto(rawStatus);
+    const online =
+      rawStatus === true ||
+      rawStatus === 1 ||
+      ["online", "on", "conectado", "connected", "true", "1"].includes(
+        normalized,
+      );
+
+    return {
+      online,
+      status: online ? "online" : "offline",
+      bruto: json,
+    };
+  }
+
+  const text = normalizarTexto(stripHtml(body));
+  const offline = /\boffline\b|desconectad|sem\s+sinal|inativ/.test(text);
+  const online = /\bonline\b|conectad|ativo|ligad/.test(text) && !offline;
+
+  return {
+    online,
+    status: online ? "online" : offline ? "offline" : "desconhecido",
+    bruto: text.slice(0, 500),
+  };
+};
+
+const parseDataHoraTabela = (texto) => {
+  const match = String(texto || "").match(
+    /(\d{2})\/(\d{2})\/(\d{4})-(\d{2}):(\d{2}):(\d{2})/,
+  );
+  if (!match) return null;
+
+  const [, dia, mes, ano, hora, min, seg] = match;
+  const data = new Date(`${ano}-${mes}-${dia}T${hora}:${min}:${seg}`);
+  return Number.isNaN(data.getTime()) ? null : data;
+};
+
+const parseValorOuZero = (texto) => {
+  if (!texto || /zero/i.test(texto)) return 0;
+  return parseMoney(texto);
+};
+
+const parseLinhaTabelaDinamica = (rowHtml) => {
+  const queueId = extractValue(rowHtml, /&#128193;(\d+)/);
+  if (!queueId) return null;
+
+  const posId = extractValue(rowHtml, /onclick="stats\((\d+)\)/);
+  const pointName = extractValue(
+    rowHtml,
+    /background-color:\s*#0095CD[^>]*>([^<]+)<\/span>/,
+  );
+  const clienteNome = extractValue(
+    rowHtml,
+    /onclick="abrirMaquinas\('([^']*)'\)/,
+  ).trim();
+
+  const valores = {};
+  for (const match of rowHtml.matchAll(
+    /<b[^>]*>&nbsp;([\s\S]*?)&nbsp;<\/b>\s*<br>\s*<span[^>]*>([^<]+)<\/span>/g,
+  )) {
+    const valorTexto = stripHtml(match[1]);
+    const label = stripHtml(match[2]);
+    if (/cliente pagou/i.test(label)) valores.valorPago = parseValorOuZero(valorTexto);
+    else if (/banco retirou|valor vazio/i.test(label)) valores.taxa = parseValorOuZero(valorTexto);
+    else if (/voc[eê] recebeu/i.test(label)) valores.liquido = parseValorOuZero(valorTexto);
+  }
+
+  const bancoMetodoBloco = rowHtml.match(/class="hide-print">([\s\S]*?)<\/td>/)?.[1] || "";
+  const bancoMetodo = stripHtml(
+    bancoMetodoBloco.match(
+      /font-weight:\s*bold;\s*font-size:\s*13px[^"]*">([\s\S]*?)<\/div>/,
+    )?.[1] || "",
+  );
+
+  const statusVenda = extractValue(rowHtml, /<strong>([^<]*Venda[^<]*)<\/strong>/);
+  const referenciaVenda = extractValue(rowHtml, /\u{1F50D}\s*<span[^>]*>([^<]+)<\/span>/u);
+  const dataHoraTexto = extractValue(
+    rowHtml,
+    /✅\s*(\d{2}\/\d{2}\/\d{4}-\d{2}:\d{2}:\d{2})/u,
+  );
+  const dataHora = parseDataHoraTabela(dataHoraTexto);
+  const deviceStatus = extractValue(
+    rowHtml,
+    /<i class="fa fa-wifi"[^>]*><\/i>\s*<span[^>]*>([^<]+)<\/span>/,
+  );
+  const deviceSerial = extractValue(
+    rowHtml,
+    /font-size:\s*12px;\s*font-weight:\s*bold;\s*color:\s*#444;[^"]*">(\d+)<\/div>/,
+  );
+
+  return {
+    id: queueId,
+    posId,
+    pointName,
+    clienteNome,
+    valorPago: valores.valorPago || 0,
+    taxa: valores.taxa || 0,
+    liquido: valores.liquido ?? valores.valorPago ?? 0,
+    bancoMetodo,
+    statusVenda: statusVenda || "",
+    referenciaVenda: referenciaVenda || "",
+    data: dataHora ? dataHora.toISOString() : null,
+    deviceStatus: deviceStatus || "",
+    deviceSerial: deviceSerial || "",
+  };
+};
+
+const parseTabelaDinamica = (html) => {
+  const tbody = html.match(/<tbody>([\s\S]*?)<\/tbody>/i)?.[1] || html;
+  const rows = [...tbody.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+
+  return rows
+    .map((row) => {
+      try {
+        return parseLinhaTabelaDinamica(row[1]);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
 };
 
 const buildFechamentoUrl = ({ posId, inicio, fim, valor = 0 }) => {
@@ -275,5 +492,101 @@ export const fecharFechamentoMachinePay = async ({
   return {
     concluido,
     status: response.status,
+  };
+};
+
+export const consultarStatusMachinePay = async ({ posId }) => {
+  const url = replaceMachinePayTokens({
+    template: process.env.MACHINE_PAY_STATUS_TEMPLATE || DEFAULT_STATUS_TEMPLATE,
+    posId,
+  });
+  const { body, status } = await fetchMachinePay(url);
+
+  return {
+    httpStatus: status,
+    consultadoEm: new Date().toISOString(),
+    ...parseStatus(body),
+  };
+};
+
+export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
+  const url =
+    process.env.MACHINE_PAY_TABELA_TEMPLATE || DEFAULT_TABELA_DINAMICA_TEMPLATE;
+  const { body, status } = await fetchMachinePay(url);
+  const registros = parseTabelaDinamica(body);
+
+  const inicioData = inicio ? new Date(inicio) : null;
+  const fimData = fim ? new Date(fim) : null;
+
+  const transacoes = registros
+    .filter((registro) => String(registro.posId) === String(posId))
+    .filter((registro) => {
+      if (!registro.data) return true;
+      const dataRegistro = new Date(registro.data);
+      if (inicioData && dataRegistro < inicioData) return false;
+      if (fimData && dataRegistro > fimData) return false;
+      return true;
+    })
+    .map((registro) => ({
+      id: registro.id,
+      data: registro.data,
+      tipo: registro.bancoMetodo || "Transacao",
+      status: registro.statusVenda || "-",
+      valor: registro.valorPago,
+      taxa: registro.taxa,
+      liquido: registro.liquido,
+      referencia: registro.referenciaVenda,
+    }));
+
+  return {
+    httpStatus: status,
+    inicio,
+    fim,
+    transacoes,
+    total: Number(
+      transacoes.reduce((sum, item) => sum + Number(item.valor || 0), 0).toFixed(2),
+    ),
+    quantidade: transacoes.length,
+  };
+};
+
+export const enviarCreditosMqttMachinePay = async ({ posId, creditos = 1 }) => {
+  const method = (process.env.MACHINE_PAY_MQTT_METHOD || "POST").toUpperCase();
+  const url = replaceMachinePayTokens({
+    template: process.env.MACHINE_PAY_MQTT_TEMPLATE || DEFAULT_MQTT_TEMPLATE,
+    posId,
+    creditos,
+  });
+  const formData = new URLSearchParams({
+    acao: process.env.MACHINE_PAY_MQTT_ACAO || "creditar",
+    pos_id: String(posId),
+    valor: formatDecimalMachinePay(creditos),
+    origem: process.env.MACHINE_PAY_MQTT_ORIGEM || "1",
+    tpagto: process.env.MACHINE_PAY_MQTT_TPAGTO || "Manual",
+    banco: process.env.MACHINE_PAY_MQTT_BANCO || "Pagto manual criado",
+  });
+
+  const { body, status } = await fetchMachinePay(url, {
+    method,
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    },
+    body: formData,
+  });
+  const json = tryParseJson(body);
+  const text = normalizarTexto(stripHtml(body));
+  const sucesso =
+    json?.ok === true ||
+    json?.status === "ok" ||
+    json?.success === true ||
+    /gravado com sucesso|sucesso|enviado|credito|mqtt/.test(text);
+
+  return {
+    httpStatus: status,
+    sucesso,
+    creditos: Number(creditos || 1),
+    online: json?.stsock ? normalizarTexto(json.stsock) === "online" : null,
+    idwebhook: json?.idwebhook || null,
+    resposta: json || text.slice(0, 500),
   };
 };
