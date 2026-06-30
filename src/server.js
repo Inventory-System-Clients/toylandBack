@@ -186,6 +186,33 @@ const startServer = async () => {
       );
     }
 
+    if (!colunasMaquinas.pelucia_gigante) {
+      const { DataTypes } = await import("sequelize");
+      await queryInterface.addColumn("maquinas", "pelucia_gigante", {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: "Indica se a maquina trabalha com pelucia gigante",
+      });
+      console.log("Coluna de pelucia gigante adicionada as maquinas!");
+    }
+    if (!colunasMaquinas.alerta_jogadas_antes_pelucia) {
+      const { DataTypes } = await import("sequelize");
+      await queryInterface.addColumn(
+        "maquinas",
+        "alerta_jogadas_antes_pelucia",
+        {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+          comment:
+            "Quantidade de jogadas antes da meta para alertar pelucia perto de sair",
+        },
+      );
+      console.log(
+        "Coluna de alerta de jogadas antes da pelucia adicionada as maquinas!",
+      );
+    }
+
     const colunasGastoVariavel =
       await queryInterface.describeTable("GastoVariavel");
     if (!colunasGastoVariavel.usuarioId) {

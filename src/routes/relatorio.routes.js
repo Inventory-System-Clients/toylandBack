@@ -11,6 +11,7 @@ import {
   alertasMovimentacaoOut,
   alertasMovimentacaoIn,
   alertasBomDesempenho,
+  alertasPeluciaGigante,
   machinePayTotalMes,
 } from "../controllers/relatorioController.js";
 import { alertasAbastecimentoIncompleto } from "../controllers/movimentacaoController.js";
@@ -62,6 +63,12 @@ router.get(
   autenticar,
   autorizarRole("ADMIN"),
   alertasBomDesempenho,
+);
+router.get(
+  "/alertas-pelucia-gigante",
+  autenticar,
+  autorizarRole("ADMIN"),
+  alertasPeluciaGigante,
 );
 router.get(
   "/machine-pay-mes",

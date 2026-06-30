@@ -72,6 +72,8 @@ export const criarMaquina = async (req, res) => {
       capacidadePadrao,
       valorFicha,
       jogadasBoasPorPelucia,
+      peluciaGigante,
+      alertaJogadasAntesPelucia,
       fichasNecessarias,
       forcaForte,
       forcaFraca,
@@ -102,6 +104,10 @@ export const criarMaquina = async (req, res) => {
       capacidadePadrao: capacidadePadrao || 100,
       valorFicha: valorFicha || 5.0,
       jogadasBoasPorPelucia: jogadasBoasPorPelucia || null,
+      peluciaGigante: Boolean(peluciaGigante),
+      alertaJogadasAntesPelucia: peluciaGigante
+        ? alertaJogadasAntesPelucia || null
+        : null,
       fichasNecessarias: fichasNecessarias || null,
       forcaForte: forcaForte || null,
       forcaFraca: forcaFraca || null,
@@ -137,6 +143,8 @@ export const atualizarMaquina = async (req, res) => {
       capacidadePadrao,
       valorFicha,
       jogadasBoasPorPelucia,
+      peluciaGigante,
+      alertaJogadasAntesPelucia,
       fichasNecessarias,
       forcaForte,
       forcaFraca,
@@ -168,6 +176,11 @@ export const atualizarMaquina = async (req, res) => {
       valorFicha: valorFicha ?? maquina.valorFicha,
       jogadasBoasPorPelucia:
         jogadasBoasPorPelucia ?? maquina.jogadasBoasPorPelucia,
+      peluciaGigante: peluciaGigante ?? maquina.peluciaGigante,
+      alertaJogadasAntesPelucia:
+        (peluciaGigante ?? maquina.peluciaGigante)
+          ? alertaJogadasAntesPelucia ?? maquina.alertaJogadasAntesPelucia
+          : null,
       fichasNecessarias: fichasNecessarias ?? maquina.fichasNecessarias,
       forcaForte: forcaForte ?? maquina.forcaForte,
       forcaFraca: forcaFraca ?? maquina.forcaFraca,

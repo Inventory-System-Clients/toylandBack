@@ -2601,3 +2601,122 @@ export const alertasBomDesempenho = async (req, res) => {
     });
   }
 };
+
+// --- ALERTAS DE PELUCIA GIGANTE PERTO DE SAIR ---
+export const alertasPeluciaGigante = async (req, res) => {
+  try {
+    const maquinas = await Maquina.findAll({
+      where: {
+        ativo: true,
+        peluciaGigante: true,
+      },
+      include: [{ model: Loja, as: "loja", attributes: ["nome"] }],
+    });
+    const alertas = [];
+
+    for (const maquina of maquinas) {
+      const jogadasMeta = Number(maquina.jogadasBoasPorPelucia || 0);
+      const jogadasAviso = Number(maquina.alertaJogadasAntesPelucia || 0);
+      const valorJogada = Number(maquina.valorFicha || 0);
+
+      if (jogadasMeta <= 0 || jogadasAviso <= 0 || valorJogada <= 0) {
+        continue;
+      }
+
+      const movimentacaoAtual = await Movimentacao.findOne({
+        where: {
+          maquinaId: maquina.id,
+          contadorIn: { [Op.ne]: null },
+        },
+        order: [["dataColeta", "DESC"]],
+        attributes: ["id", "usuarioId", "contadorIn", "sairam", "dataColeta"],
+        include: [
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: ["id", "nome", "email"],
+          },
+        ],
+      });
+
+      if (!movimentacaoAtual) continue;
+
+      const ultimaSaida = await Movimentacao.findOne({
+        where: {
+          maquinaId: maquina.id,
+          contadorIn: { [Op.ne]: null },
+          sairam: { [Op.gt]: 0 },
+        },
+        order: [["dataColeta", "DESC"]],
+        attributes: ["id", "usuarioId", "contadorIn", "sairam", "dataColeta"],
+        include: [
+          {
+            model: Usuario,
+            as: "usuario",
+            attributes: ["id", "nome", "email"],
+          },
+        ],
+      });
+
+      if (!ultimaSaida) continue;
+
+      const contadorAtual = Number(movimentacaoAtual.contadorIn || 0);
+      const contadorUltimaSaida = Number(ultimaSaida.contadorIn || 0);
+      const diffContador = contadorAtual - contadorUltimaSaida;
+
+      if (diffContador < 0) continue;
+
+      const jogadasDesdeUltimaSaida = diffContador / valorJogada;
+      const jogadasFaltantes = jogadasMeta - jogadasDesdeUltimaSaida;
+
+      if (jogadasFaltantes < 0 || jogadasFaltantes > jogadasAviso) {
+        continue;
+      }
+
+      const contadorMeta = contadorUltimaSaida + jogadasMeta * valorJogada;
+      const contadorAvisoInicio =
+        contadorUltimaSaida + Math.max(jogadasMeta - jogadasAviso, 0) * valorJogada;
+      const metadadosAtual = montarMetadadosMovimentacao(movimentacaoAtual);
+      const metadadosUltimaSaida = montarMetadadosMovimentacao(ultimaSaida);
+
+      alertas.push({
+        id: `${maquina.id}-${movimentacaoAtual.id}-pelucia-gigante`,
+        tipo: "pelucia_gigante_perto_de_sair",
+        maquinaId: maquina.id,
+        maquinaNome: maquina.nome || maquina.codigo || maquina.id,
+        lojaNome: maquina.loja?.nome || null,
+        valorJogada,
+        jogadasBoasPorPelucia: jogadasMeta,
+        alertaJogadasAntesPelucia: jogadasAviso,
+        contadorAtual,
+        contadorUltimaSaida,
+        contadorMeta: Number(contadorMeta.toFixed(2)),
+        contadorAvisoInicio: Number(contadorAvisoInicio.toFixed(2)),
+        jogadasDesdeUltimaSaida: Number(jogadasDesdeUltimaSaida.toFixed(2)),
+        jogadasFaltantes: Number(Math.max(jogadasFaltantes, 0).toFixed(2)),
+        contadorFaltante: Number(
+          Math.max(contadorMeta - contadorAtual, 0).toFixed(2),
+        ),
+        sairamUltimaSaida: Number(ultimaSaida.sairam || 0),
+        ...metadadosUltimaSaida,
+        ...metadadosAtual,
+        usuarioUltimaSaida: metadadosUltimaSaida.usuarioNome,
+        usuarioAtual: metadadosAtual.usuarioNome,
+        dataUltimaSaida: metadadosUltimaSaida.dataMovimentacao,
+        dataMovimentacaoAtual: metadadosAtual.dataMovimentacao,
+        mensagem: `A pelucia gigante da maquina ${
+          maquina.nome || maquina.codigo || maquina.id
+        } esta perto de sair: faltam ${Number(
+          Math.max(jogadasFaltantes, 0).toFixed(2),
+        )} jogada(s) para a meta programada de ${jogadasMeta}.`,
+      });
+    }
+
+    res.json({ alertas });
+  } catch (error) {
+    res.status(500).json({
+      error: "Erro ao buscar alertas de pelucia gigante",
+      message: error.message,
+    });
+  }
+};

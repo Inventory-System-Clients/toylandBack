@@ -57,6 +57,23 @@ const Maquina = sequelize.define(
       field: "jogadas_boas_por_pelucia",
       comment: "Quantidade ideal de jogadas para sair uma pelúcia",
     },
+    peluciaGigante: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      field: "pelucia_gigante",
+      comment: "Indica se a maquina trabalha com pelucia gigante",
+    },
+    alertaJogadasAntesPelucia: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      field: "alerta_jogadas_antes_pelucia",
+      comment:
+        "Quantidade de jogadas antes da meta para alertar pelucia perto de sair",
+      validate: {
+        min: 1,
+      },
+    },
     fichasNecessarias: {
       type: DataTypes.INTEGER,
       allowNull: true,
