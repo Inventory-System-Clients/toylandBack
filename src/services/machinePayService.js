@@ -4,8 +4,6 @@ const DEFAULT_API_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=stats&posid={posid}&dataini={inicio64}&datafim={fim64}&chave={chave}";
 const DEFAULT_FECHAMENTO_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=fechamento&tipo=maq&dataini={inicio64}&datafim={fim64}&valor={valor64}&id={id}&pos_id={posid}";
-const DEFAULT_STATUS_TEMPLATE =
-  "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=status&posid={posid}&chave={chave}";
 const DEFAULT_TABELA_DINAMICA_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/tabela_dinamica.php?filtro=todos";
 const DEFAULT_MQTT_TEMPLATE =
@@ -238,45 +236,6 @@ const normalizarTexto = (value) =>
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
-const parseStatus = (body) => {
-  const json = tryParseJson(body);
-  const rawStatus =
-    json?.stsock ??
-    json?.status ??
-    json?.online ??
-    json?.conectado ??
-    json?.connected ??
-    json?.maquina?.status ??
-    json?.maquina?.online ??
-    null;
-
-  if (rawStatus !== null && rawStatus !== undefined) {
-    const normalized = normalizarTexto(rawStatus);
-    const online =
-      rawStatus === true ||
-      rawStatus === 1 ||
-      ["online", "on", "conectado", "connected", "true", "1"].includes(
-        normalized,
-      );
-
-    return {
-      online,
-      status: online ? "online" : "offline",
-      bruto: json,
-    };
-  }
-
-  const text = normalizarTexto(stripHtml(body));
-  const offline = /\boffline\b|desconectad|sem\s+sinal|inativ/.test(text);
-  const online = /\bonline\b|conectad|ativo|ligad/.test(text) && !offline;
-
-  return {
-    online,
-    status: online ? "online" : offline ? "offline" : "desconhecido",
-    bruto: text.slice(0, 500),
-  };
-};
-
 const parseDataHoraTabela = (texto) => {
   const match = String(texto || "").match(
     /(\d{2})\/(\d{2})\/(\d{4})-(\d{2}):(\d{2}):(\d{2})/,
@@ -290,11 +249,12 @@ const parseDataHoraTabela = (texto) => {
 
 const parseValorOuZero = (texto) => {
   if (!texto || /zero/i.test(texto)) return 0;
-  return parseMoney(texto);
+  const match = String(texto).match(/\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : 0;
 };
 
 const parseLinhaTabelaDinamica = (rowHtml) => {
-  const queueId = extractValue(rowHtml, /&#128193;(\d+)/);
+  const queueId = extractValue(rowHtml, /&#128193;\s*(\d+)/);
   if (!queueId) return null;
 
   const posId = extractValue(rowHtml, /onclick="stats\((\d+)\)/);
@@ -496,16 +456,32 @@ export const fecharFechamentoMachinePay = async ({
 };
 
 export const consultarStatusMachinePay = async ({ posId }) => {
-  const url = replaceMachinePayTokens({
-    template: process.env.MACHINE_PAY_STATUS_TEMPLATE || DEFAULT_STATUS_TEMPLATE,
-    posId,
-  });
+  const url =
+    process.env.MACHINE_PAY_TABELA_TEMPLATE || DEFAULT_TABELA_DINAMICA_TEMPLATE;
   const { body, status } = await fetchMachinePay(url);
+  const registro = parseTabelaDinamica(body).find(
+    (item) => String(item.posId) === String(posId),
+  );
+
+  if (!registro) {
+    return {
+      httpStatus: status,
+      consultadoEm: new Date().toISOString(),
+      online: false,
+      status: "desconhecido",
+      bruto: null,
+    };
+  }
+
+  const online = /online/i.test(registro.deviceStatus);
 
   return {
     httpStatus: status,
     consultadoEm: new Date().toISOString(),
-    ...parseStatus(body),
+    online,
+    status: online ? "online" : "offline",
+    ultimaTransacaoEm: registro.data,
+    bruto: registro.deviceStatus,
   };
 };
 
@@ -557,10 +533,12 @@ export const enviarCreditosMqttMachinePay = async ({ posId, creditos = 1 }) => {
     posId,
     creditos,
   });
+  const idwebhook = `${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
   const formData = new URLSearchParams({
     acao: process.env.MACHINE_PAY_MQTT_ACAO || "creditar",
     pos_id: String(posId),
     valor: formatDecimalMachinePay(creditos),
+    idwebhook,
     origem: process.env.MACHINE_PAY_MQTT_ORIGEM || "1",
     tpagto: process.env.MACHINE_PAY_MQTT_TPAGTO || "Manual",
     banco: process.env.MACHINE_PAY_MQTT_BANCO || "Pagto manual criado",
