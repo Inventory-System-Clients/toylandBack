@@ -2,6 +2,7 @@ import express from "express";
 import {
   consultarStatusMaquinas,
   consultarTransacoes24h,
+  descobrirUsrPorPosId,
   enviarCreditosMqtt,
   listarMaquinasMachinePay,
 } from "../controllers/machinePayController.js";
@@ -13,6 +14,7 @@ router.use(autenticar, autorizarRole("ADMIN"));
 
 router.get("/maquinas", listarMaquinasMachinePay);
 router.get("/status", consultarStatusMaquinas);
+router.get("/descobrir-usr/:posId", descobrirUsrPorPosId);
 router.post("/maquinas/:id/mqtt-creditos", enviarCreditosMqtt);
 router.get("/maquinas/:id/transacoes-24h", consultarTransacoes24h);
 

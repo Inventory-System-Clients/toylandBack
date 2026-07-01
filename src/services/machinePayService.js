@@ -457,21 +457,52 @@ export const fecharFechamentoMachinePay = async ({
   };
 };
 
-export const consultarStatusMachinePay = async ({ posId }) => {
+const buscarStatusViaFiltro = async ({ usrId, posId }) => {
   const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
-  const statsUrl = `${loginUrl}maquinas.php?acao=stats&posid=${encodeURIComponent(posId)}`;
-  const { body, status } = await fetchMachinePay(statsUrl, {
+  const chave = Buffer.from(String(posId), "utf8").toString("base64");
+  const url = `${loginUrl}maquinas.php?acao=filtro&idusr=${usrId}&chave=${encodeURIComponent(chave)}`;
+  const { body } = await fetchMachinePay(url, {
     headers: { "X-Requested-With": "XMLHttpRequest" },
   });
+  if (!body.includes(String(posId)) && !body.includes("maq_on") && !body.includes("maq_off")) {
+    return null;
+  }
+  const offline = body.includes("maq_off");
+  const online = body.includes("maq_on") && !offline;
+  return { online: online && !offline, status: offline ? "offline" : online ? "online" : "desconhecido" };
+};
 
-  const wifiMatch = body.match(
-    /<i class="fa fa-wifi"[^>]*><\/i>\s*<span[^>]*>([^<]+)<\/span>/,
-  );
-  const statusText = wifiMatch?.[1]?.trim() || null;
+export const descobrirUsrDePosId = async ({ posId }) => {
+  const usrIds = (process.env.MACHINE_PAY_USR || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
-  if (!statusText) {
+  for (const usrId of usrIds) {
+    const resultado = await buscarStatusViaFiltro({ usrId, posId });
+    if (resultado) return { usrId, ...resultado };
+  }
+  return null;
+};
+
+export const consultarStatusMachinePay = async ({ posId, usrId: usrIdParam }) => {
+  const usrId = usrIdParam || (process.env.MACHINE_PAY_USR || "").split(",")[0].trim();
+
+  if (!usrId) {
     return {
-      httpStatus: status,
+      httpStatus: 0,
+      consultadoEm: new Date().toISOString(),
+      online: false,
+      status: "desconhecido",
+      bruto: "Configure MACHINE_PAY_USR no .env",
+    };
+  }
+
+  const resultado = await buscarStatusViaFiltro({ usrId, posId });
+
+  if (!resultado) {
+    return {
+      httpStatus: 200,
       consultadoEm: new Date().toISOString(),
       online: false,
       status: "desconhecido",
@@ -479,16 +510,11 @@ export const consultarStatusMachinePay = async ({ posId }) => {
     };
   }
 
-  const online = /online/i.test(statusText);
-  const dataMatch = body.match(/✅\s*(\d{2}\/\d{2}\/\d{4}-\d{2}:\d{2}:\d{2})/u);
-
   return {
-    httpStatus: status,
+    httpStatus: 200,
     consultadoEm: new Date().toISOString(),
-    online,
-    status: online ? "online" : "offline",
-    ultimaTransacaoEm: dataMatch?.[1] ?? null,
-    bruto: statusText,
+    ...resultado,
+    bruto: resultado.status,
   };
 };
 

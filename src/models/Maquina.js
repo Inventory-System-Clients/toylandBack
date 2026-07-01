@@ -26,6 +26,12 @@ const Maquina = sequelize.define(
       field: "machine_pay_pos_id",
       comment: "Identificador POS da máquina no painel Machine Pay",
     },
+    machinePayUsrId: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+      field: "machine_pay_usr_id",
+      comment: "ID do cliente/usr no painel Machine Pay para consulta de status",
+    },
     tipo: {
       type: DataTypes.STRING(50),
       allowNull: true,

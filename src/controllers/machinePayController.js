@@ -4,6 +4,7 @@ import {
   consultarStatusMachinePay,
   consultarTransacoesMachinePay,
   enviarCreditosMqttMachinePay,
+  descobrirUsrDePosId,
 } from "../services/machinePayService.js";
 
 const atributosMaquina = [
@@ -11,6 +12,7 @@ const atributosMaquina = [
   "codigo",
   "nome",
   "machinePayPosId",
+  "machinePayUsrId",
   "lojaId",
   "ativo",
 ];
@@ -88,6 +90,7 @@ export const consultarStatusMaquinas = async (req, res) => {
           try {
             const status = await consultarStatusMachinePay({
               posId: maquina.machinePayPosId,
+              usrId: maquina.machinePayUsrId || undefined,
             });
 
             return {
@@ -160,5 +163,21 @@ export const consultarTransacoes24h = async (req, res) => {
     res.status(error.status || 502).json({
       error: error.message || "Nao foi possivel consultar transacoes.",
     });
+  }
+};
+
+export const descobrirUsrPorPosId = async (req, res) => {
+  try {
+    const { posId } = req.params;
+    const resultado = await descobrirUsrDePosId({ posId });
+    if (!resultado) {
+      return res.status(404).json({
+        error: "Nao foi possivel encontrar o usr para esse posId. Verifique MACHINE_PAY_USR no .env.",
+      });
+    }
+    res.json(resultado);
+  } catch (error) {
+    console.error("[MachinePay] Erro ao descobrir usr:", error);
+    res.status(502).json({ error: error.message });
   }
 };
