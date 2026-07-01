@@ -243,7 +243,7 @@ const parseDataHoraTabela = (texto) => {
   if (!match) return null;
 
   const [, dia, mes, ano, hora, min, seg] = match;
-  const data = new Date(`${ano}-${mes}-${dia}T${hora}:${min}:${seg}`);
+  const data = new Date(`${ano}-${mes}-${dia}T${hora}:${min}:${seg}-03:00`);
   return Number.isNaN(data.getTime()) ? null : data;
 };
 
@@ -540,8 +540,8 @@ export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
   const { body, status } = await fetchMachinePay(url);
   const registros = parseExtratoMaquina(body);
 
-  const inicioData = inicio ? new Date(inicio) : null;
-  const fimData = fim ? new Date(fim) : null;
+  const inicioData = inicio ? new Date(`${inicio}-03:00`) : null;
+  const fimData = fim ? new Date(`${fim}-03:00`) : null;
 
   const transacoes = registros
     .filter((registro) => {

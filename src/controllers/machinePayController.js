@@ -17,13 +17,26 @@ const atributosMaquina = [
   "ativo",
 ];
 
+const formatarDataHoraBrasilia = (data) =>
+  new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })
+    .format(data)
+    .replace(" ", "T");
+
 const montarPeriodoUltimas24h = () => {
   const fim = new Date();
   const inicio = new Date(fim.getTime() - 24 * 60 * 60 * 1000);
 
   return {
-    inicio: inicio.toISOString().slice(0, 16),
-    fim: fim.toISOString().slice(0, 16),
+    inicio: formatarDataHoraBrasilia(inicio),
+    fim: formatarDataHoraBrasilia(fim),
   };
 };
 
