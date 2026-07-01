@@ -6,8 +6,6 @@ const DEFAULT_API_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=stats&posid={posid}&dataini={inicio64}&datafim={fim64}&chave={chave}";
 const DEFAULT_FECHAMENTO_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=fechamento&tipo=maq&dataini={inicio64}&datafim={fim64}&valor={valor64}&id={id}&pos_id={posid}";
-const DEFAULT_TABELA_DINAMICA_TEMPLATE =
-  "https://www.cyberpix.com.br/pix-adesivo-clientes/tabela_dinamica.php?filtro=todos";
 const DEFAULT_MQTT_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/salvar_credito_mqtt.php";
 
@@ -249,85 +247,62 @@ const parseDataHoraTabela = (texto) => {
   return Number.isNaN(data.getTime()) ? null : data;
 };
 
-const parseValorOuZero = (texto) => {
-  if (!texto || /zero/i.test(texto)) return 0;
-  const match = String(texto).match(/\d+(?:\.\d+)?/);
-  return match ? Number(match[0]) : 0;
+const capturarValorPorLabel = (rowHtml, label) => {
+  const regex = new RegExp(
+    `<b[^>]*>([^<]*)<\\/b>\\s*<br>\\s*<span[^>]*>\\s*${label}\\s*<\\/span>`,
+    "i",
+  );
+  const match = rowHtml.match(regex);
+  return match ? parseMoney(stripHtml(match[1])) : 0;
 };
 
-const parseLinhaTabelaDinamica = (rowHtml) => {
-  const queueId = extractValue(rowHtml, /&#128193;\s*(\d+)/);
-  if (!queueId) return null;
-
-  const posId = extractValue(rowHtml, /onclick="stats\((\d+)\)/);
-  const pointName = extractValue(
-    rowHtml,
-    /background-color:\s*#0095CD[^>]*>([^<]+)<\/span>/,
-  );
-  const clienteNome = extractValue(
-    rowHtml,
-    /onclick="abrirMaquinas\('([^']*)'\)/,
-  ).trim();
-
-  const valores = {};
-  for (const match of rowHtml.matchAll(
-    /<b[^>]*>&nbsp;([\s\S]*?)&nbsp;<\/b>\s*<br>\s*<span[^>]*>([^<]+)<\/span>/g,
-  )) {
-    const valorTexto = stripHtml(match[1]);
-    const label = stripHtml(match[2]);
-    if (/cliente pagou/i.test(label)) valores.valorPago = parseValorOuZero(valorTexto);
-    else if (/banco retirou|valor vazio/i.test(label)) valores.taxa = parseValorOuZero(valorTexto);
-    else if (/voc[eê] recebeu/i.test(label)) valores.liquido = parseValorOuZero(valorTexto);
-  }
-
-  const bancoMetodoBloco = rowHtml.match(/class="hide-print">([\s\S]*?)<\/td>/)?.[1] || "";
-  const bancoMetodo = stripHtml(
-    bancoMetodoBloco.match(
-      /font-weight:\s*bold;\s*font-size:\s*13px[^"]*">([\s\S]*?)<\/div>/,
-    )?.[1] || "",
-  );
-
-  const statusVenda = extractValue(rowHtml, /<strong>([^<]*Venda[^<]*)<\/strong>/);
-  const referenciaVenda = extractValue(rowHtml, /\u{1F50D}\s*<span[^>]*>([^<]+)<\/span>/u);
+const parseLinhaExtratoMaquina = (rowHtml) => {
   const dataHoraTexto = extractValue(
     rowHtml,
     /✅\s*(\d{2}\/\d{2}\/\d{4}-\d{2}:\d{2}:\d{2})/u,
   );
+  if (!dataHoraTexto) return null;
+
   const dataHora = parseDataHoraTabela(dataHoraTexto);
-  const deviceStatus = extractValue(
-    rowHtml,
-    /<i class="fa fa-wifi"[^>]*><\/i>\s*<span[^>]*>([^<]+)<\/span>/,
+
+  const idMatch =
+    rowHtml.match(/apagarRegistro2\((\d+)\)/) ||
+    rowHtml.match(/change_pagto\((\d+)\)/);
+  const id = idMatch ? idMatch[1] : dataHoraTexto;
+
+  const valorPago = capturarValorPorLabel(rowHtml, "Cliente Pagou");
+  const taxa = capturarValorPorLabel(rowHtml, "Banco Retirou");
+  const liquido = capturarValorPorLabel(rowHtml, "Voc[eê] Recebeu");
+
+  const bancoMetodoMatch = rowHtml.match(
+    /font-size:\s*13px;\s*line-height:\s*1\.3;">\s*([\s\S]*?)<\/div>/,
   );
-  const deviceSerial = extractValue(
-    rowHtml,
-    /font-size:\s*12px;\s*font-weight:\s*bold;\s*color:\s*#444;[^"]*">(\d+)<\/div>/,
-  );
+  const bancoMetodo = bancoMetodoMatch ? stripHtml(bancoMetodoMatch[1]) : "";
+
+  const statusMatch = rowHtml.match(/<strong>([^<]+)<\/strong>/);
+  const statusVenda = statusMatch ? statusMatch[1].trim() : "";
+
+  const referenciaVenda = extractValue(rowHtml, /\u{1F50D}\s*<span[^>]*>([^<]+)<\/span>/u);
 
   return {
-    id: queueId,
-    posId,
-    pointName,
-    clienteNome,
-    valorPago: valores.valorPago || 0,
-    taxa: valores.taxa || 0,
-    liquido: valores.liquido ?? valores.valorPago ?? 0,
+    id,
+    valorPago,
+    taxa,
+    liquido,
     bancoMetodo,
-    statusVenda: statusVenda || "",
-    referenciaVenda: referenciaVenda || "",
+    statusVenda,
+    referenciaVenda,
     data: dataHora ? dataHora.toISOString() : null,
-    deviceStatus: deviceStatus || "",
-    deviceSerial: deviceSerial || "",
   };
 };
 
-const parseTabelaDinamica = (html) => {
-  const tbody = html.match(/<tbody>([\s\S]*?)<\/tbody>/i)?.[1] || html;
-  const rows = [...tbody.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+const parseExtratoMaquina = (html) => {
+  const rows = [...html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
 
   return rows
     .map((row) => {
       try {
-        return parseLinhaTabelaDinamica(row[1]);
+        return parseLinhaExtratoMaquina(row[1]);
       } catch {
         return null;
       }
@@ -546,16 +521,14 @@ export const consultarStatusMachinePay = async ({ posId, usrId: usrIdParam }) =>
 };
 
 export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
-  const url =
-    process.env.MACHINE_PAY_TABELA_TEMPLATE || DEFAULT_TABELA_DINAMICA_TEMPLATE;
+  const url = buildStatsUrl({ posId, inicio, fim });
   const { body, status } = await fetchMachinePay(url);
-  const registros = parseTabelaDinamica(body);
+  const registros = parseExtratoMaquina(body);
 
   const inicioData = inicio ? new Date(inicio) : null;
   const fimData = fim ? new Date(fim) : null;
 
   const transacoes = registros
-    .filter((registro) => String(registro.posId) === String(posId))
     .filter((registro) => {
       if (!registro.data) return true;
       const dataRegistro = new Date(registro.data);
