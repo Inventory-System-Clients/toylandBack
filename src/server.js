@@ -135,6 +135,13 @@ const startServer = async () => {
     await sequelize.sync();
     console.log("✅ Database sincronizado!");
 
+    // Migration: machine_pay_usr_id em maquinas (idempotente)
+    await sequelize.query(`
+      ALTER TABLE maquinas
+      ADD COLUMN IF NOT EXISTS machine_pay_usr_id VARCHAR(50) DEFAULT NULL;
+    `).catch(() => {});
+    console.log("✅ Coluna machine_pay_usr_id verificada!");
+
     const { obterOuCriarGaragem } = await import(
       "./controllers/movimentacaoEstoqueLojaController.js"
     );
