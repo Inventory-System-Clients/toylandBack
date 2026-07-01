@@ -257,16 +257,13 @@ const capturarValorPorLabel = (rowHtml, label) => {
 };
 
 const capturarPulsoMachinePay = (rowHtml) => {
-  const match = rowHtml.match(
-    /<div style="display:inline-block;">\s*<span[^>]*>\s*<img[^>]*>\s*([^<]*)<\/span>\s*<br>\s*<b>\s*<span[^>]*>([^<]*)<\/span>/i,
-  );
+  const match = rowHtml.match(/<span[^>]*>\s*(Pulso[^<]*)<\/span>/i);
   if (!match) return { pulsoConsultado: false, pulsoStatus: "" };
 
-  const consultadoTexto = stripHtml(match[1]);
-  const pulsoStatus = stripHtml(match[2]);
+  const pulsoStatus = stripHtml(match[1]);
 
   return {
-    pulsoConsultado: /consultado/i.test(consultadoTexto),
+    pulsoConsultado: /liberado/i.test(pulsoStatus),
     pulsoStatus,
   };
 };
