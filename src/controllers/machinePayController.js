@@ -147,7 +147,18 @@ export const consultarTransacoes24h = async (req, res) => {
   try {
     const { id } = req.params;
     const maquina = await buscarMaquinaMachinePay(id);
-    const periodo = montarPeriodoUltimas24h();
+
+    const isAdmin = req.usuario?.role === "ADMIN";
+    let periodo;
+    if (isAdmin && req.query.inicio && req.query.fim) {
+      periodo = {
+        inicio: req.query.inicio,
+        fim: req.query.fim,
+      };
+    } else {
+      periodo = montarPeriodoUltimas24h();
+    }
+
     const dados = await consultarTransacoesMachinePay({
       posId: maquina.machinePayPosId,
       ...periodo,

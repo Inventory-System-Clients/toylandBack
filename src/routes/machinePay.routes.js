@@ -10,7 +10,7 @@ import { autenticar, autorizarRole } from "../middlewares/auth.js";
 
 const router = express.Router();
 
-router.use(autenticar, autorizarRole("ADMIN"));
+router.use(autenticar, autorizarRole("ADMIN", "MACHINEPAY"));
 
 router.get("/maquinas", listarMaquinasMachinePay);
 router.get("/status", consultarStatusMaquinas);

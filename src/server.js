@@ -142,6 +142,19 @@ const startServer = async () => {
     `).catch(() => {});
     console.log("✅ Coluna machine_pay_usr_id verificada!");
 
+    // Migration: role MACHINEPAY no enum (idempotente)
+    await sequelize.query(`
+      DO $$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_enum WHERE enumlabel = 'MACHINEPAY'
+          AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'enum_usuarios_role')
+        ) THEN
+          ALTER TYPE "enum_usuarios_role" ADD VALUE 'MACHINEPAY';
+        END IF;
+      END $$;
+    `).catch(() => {});
+    console.log("✅ Role MACHINEPAY verificada!");
+
     const { obterOuCriarGaragem } = await import(
       "./controllers/movimentacaoEstoqueLojaController.js"
     );
