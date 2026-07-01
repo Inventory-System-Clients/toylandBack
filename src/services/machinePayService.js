@@ -257,7 +257,7 @@ const capturarValorPorLabel = (rowHtml, label) => {
 };
 
 const capturarPulsoMachinePay = (rowHtml) => {
-  const match = rowHtml.match(/<span[^>]*>\s*(Pulso[^<]*)<\/span>/i);
+  const match = rowHtml.match(/<b[^>]*>\s*(Pulso[^<]*)<\/b>/i);
   if (!match) return { pulsoConsultado: false, pulsoStatus: "" };
 
   const pulsoStatus = stripHtml(match[1]);
@@ -565,13 +565,19 @@ export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
     }));
 
   const indicePulso = body.indexOf("Pulso");
+  const indiceAusente = body.indexOf("Ausente");
 
   return {
     httpStatus: status,
     debugPulsoPresente: indicePulso !== -1,
     debugPulsoTrecho:
       indicePulso !== -1
-        ? body.slice(Math.max(0, indicePulso - 80), indicePulso + 120)
+        ? body.slice(Math.max(0, indicePulso - 400), indicePulso + 120)
+        : null,
+    debugAusentePresente: indiceAusente !== -1,
+    debugAusenteTrecho:
+      indiceAusente !== -1
+        ? body.slice(Math.max(0, indiceAusente - 300), indiceAusente + 120)
         : null,
     inicio,
     fim,
