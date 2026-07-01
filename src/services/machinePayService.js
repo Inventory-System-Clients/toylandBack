@@ -458,14 +458,18 @@ export const fecharFechamentoMachinePay = async ({
 };
 
 export const consultarStatusMachinePay = async ({ posId }) => {
-  const url =
-    process.env.MACHINE_PAY_TABELA_TEMPLATE || DEFAULT_TABELA_DINAMICA_TEMPLATE;
-  const { body, status } = await fetchMachinePay(url);
-  const registro = parseTabelaDinamica(body).find(
-    (item) => String(item.posId) === String(posId),
-  );
+  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const statsUrl = `${loginUrl}maquinas.php?acao=stats&posid=${encodeURIComponent(posId)}`;
+  const { body, status } = await fetchMachinePay(statsUrl, {
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  });
 
-  if (!registro) {
+  const wifiMatch = body.match(
+    /<i class="fa fa-wifi"[^>]*><\/i>\s*<span[^>]*>([^<]+)<\/span>/,
+  );
+  const statusText = wifiMatch?.[1]?.trim() || null;
+
+  if (!statusText) {
     return {
       httpStatus: status,
       consultadoEm: new Date().toISOString(),
@@ -475,15 +479,16 @@ export const consultarStatusMachinePay = async ({ posId }) => {
     };
   }
 
-  const online = /online/i.test(registro.deviceStatus);
+  const online = /online/i.test(statusText);
+  const dataMatch = body.match(/✅\s*(\d{2}\/\d{2}\/\d{4}-\d{2}:\d{2}:\d{2})/u);
 
   return {
     httpStatus: status,
     consultadoEm: new Date().toISOString(),
     online,
     status: online ? "online" : "offline",
-    ultimaTransacaoEm: registro.data,
-    bruto: registro.deviceStatus,
+    ultimaTransacaoEm: dataMatch?.[1] ?? null,
+    bruto: statusText,
   };
 };
 
