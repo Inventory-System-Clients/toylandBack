@@ -564,8 +564,15 @@ export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
       pulsoStatus: registro.pulsoStatus,
     }));
 
+  const indicePulso = body.indexOf("Pulso");
+
   return {
     httpStatus: status,
+    debugPulsoPresente: indicePulso !== -1,
+    debugPulsoTrecho:
+      indicePulso !== -1
+        ? body.slice(Math.max(0, indicePulso - 80), indicePulso + 120)
+        : null,
     inicio,
     fim,
     transacoes,
