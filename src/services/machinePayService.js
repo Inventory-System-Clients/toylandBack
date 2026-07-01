@@ -457,6 +457,25 @@ export const fecharFechamentoMachinePay = async ({
   };
 };
 
+let _adminUsrCache = null;
+
+const descobrirAdminUsr = async () => {
+  if (_adminUsrCache) return _adminUsrCache;
+  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  try {
+    const { body } = await fetchMachinePay(
+      `${loginUrl}maquinas.php?acao=maquinas`,
+      { headers: { "X-Requested-With": "XMLHttpRequest" } },
+    );
+    const match = body.match(/copiarDadosMaquina\((\d{10,20})/);
+    if (match) {
+      _adminUsrCache = match[1];
+      return _adminUsrCache;
+    }
+  } catch {}
+  return null;
+};
+
 const buscarStatusViaFiltro = async ({ usrId, posId }) => {
   const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
   const chave = Buffer.from(String(posId), "utf8").toString("base64");
@@ -482,11 +501,19 @@ export const descobrirUsrDePosId = async ({ posId }) => {
     const resultado = await buscarStatusViaFiltro({ usrId, posId });
     if (resultado) return { usrId, ...resultado };
   }
+
+  const adminUsr = await descobrirAdminUsr();
+  if (adminUsr) {
+    const resultado = await buscarStatusViaFiltro({ usrId: adminUsr, posId });
+    if (resultado) return { usrId: adminUsr, ...resultado };
+  }
+
   return null;
 };
 
 export const consultarStatusMachinePay = async ({ posId, usrId: usrIdParam }) => {
-  const usrId = usrIdParam || (process.env.MACHINE_PAY_USR || "").split(",")[0].trim();
+  const envUsrId = (process.env.MACHINE_PAY_USR || "").split(",")[0].trim();
+  const usrId = usrIdParam || envUsrId || (await descobrirAdminUsr());
 
   if (!usrId) {
     return {
@@ -494,7 +521,7 @@ export const consultarStatusMachinePay = async ({ posId, usrId: usrIdParam }) =>
       consultadoEm: new Date().toISOString(),
       online: false,
       status: "desconhecido",
-      bruto: "Configure MACHINE_PAY_USR no .env",
+      bruto: null,
     };
   }
 
