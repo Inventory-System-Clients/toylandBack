@@ -277,10 +277,13 @@ const parseLinhaExtratoMaquina = (rowHtml) => {
 
   const dataHora = parseDataHoraTabela(dataHoraTexto);
 
-  const idMatch =
+  const idwebhookMatch =
+    rowHtml.match(/devolver\((\d+)\)/) ||
+    rowHtml.match(/id="dv(\d+)"/) ||
     rowHtml.match(/apagarRegistro2\((\d+)\)/) ||
     rowHtml.match(/change_pagto\((\d+)\)/);
-  const id = idMatch ? idMatch[1] : dataHoraTexto;
+  const idwebhook = idwebhookMatch ? idwebhookMatch[1] : null;
+  const id = idwebhook || dataHoraTexto;
 
   const valorPago = capturarValorPorLabel(rowHtml, "Cliente Pagou");
   const taxa = capturarValorPorLabel(rowHtml, "Banco Retirou");
@@ -299,6 +302,7 @@ const parseLinhaExtratoMaquina = (rowHtml) => {
 
   return {
     id,
+    idwebhook,
     valorPago,
     taxa,
     liquido,
@@ -551,18 +555,31 @@ export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
       if (fimData && dataRegistro > fimData) return false;
       return true;
     })
-    .map((registro) => ({
-      id: registro.id,
-      data: registro.data,
-      tipo: registro.bancoMetodo || "Transacao",
-      status: registro.statusVenda || "-",
-      valor: registro.valorPago,
-      taxa: registro.taxa,
-      liquido: registro.liquido,
-      referencia: registro.referenciaVenda,
-      pulsoConsultado: registro.pulsoConsultado,
-      pulsoStatus: registro.pulsoStatus,
-    }));
+    .map((registro) => {
+      const aprovada = /aprova/i.test(registro.statusVenda || "");
+      const jaDevolvido = /devolv/i.test(registro.statusVenda || "");
+      const pagamentoReal = !/manual/i.test(registro.bancoMetodo || "");
+      const podeDevolver = Boolean(
+        registro.idwebhook && pagamentoReal && aprovada && !jaDevolvido,
+      );
+
+      return {
+        id: registro.id,
+        idwebhook: registro.idwebhook,
+        data: registro.data,
+        tipo: registro.bancoMetodo || "Transacao",
+        status: registro.statusVenda || "-",
+        valor: registro.valorPago,
+        taxa: registro.taxa,
+        liquido: registro.liquido,
+        referencia: registro.referenciaVenda,
+        pulsoConsultado: registro.pulsoConsultado,
+        pulsoStatus: registro.pulsoStatus,
+        pagamentoReal,
+        jaDevolvido,
+        podeDevolver,
+      };
+    });
 
   const indicePulso = body.indexOf("Pulso");
   const indiceAusente = body.indexOf("Ausente");
@@ -586,6 +603,34 @@ export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
       transacoes.reduce((sum, item) => sum + Number(item.valor || 0), 0).toFixed(2),
     ),
     quantidade: transacoes.length,
+  };
+};
+
+export const devolverPagamentoMachinePay = async ({ idwebhook }) => {
+  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const url = `${loginUrl}maquinas.php?acao=devolver&idwebhook=${encodeURIComponent(idwebhook)}`;
+  const { body, status } = await fetchMachinePay(url, {
+    headers: { "X-Requested-With": "XMLHttpRequest" },
+  });
+
+  const textoNormalizado = normalizarTexto(body);
+  const alertMatch = body.match(/alert\("([^"]*)"\)/i);
+  const mensagem = alertMatch ? alertMatch[1] : "";
+
+  const sucesso =
+    textoNormalizado.includes("solicitacao de devolucao") &&
+    textoNormalizado.includes(String(idwebhook));
+
+  if (!sucesso) {
+    throw new Error(
+      mensagem || "Nao foi possivel solicitar a devolucao na Machine Pay.",
+    );
+  }
+
+  return {
+    httpStatus: status,
+    sucesso: true,
+    mensagem,
   };
 };
 

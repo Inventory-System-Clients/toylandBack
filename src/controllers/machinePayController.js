@@ -4,6 +4,7 @@ import {
   consultarStatusMachinePay,
   consultarTransacoesMachinePay,
   enviarCreditosMqttMachinePay,
+  devolverPagamentoMachinePay,
   descobrirUsrDePosId,
 } from "../services/machinePayService.js";
 
@@ -186,6 +187,23 @@ export const consultarTransacoes24h = async (req, res) => {
     console.error("[MachinePay] Erro ao consultar transacoes:", error);
     res.status(error.status || 502).json({
       error: error.message || "Nao foi possivel consultar transacoes.",
+    });
+  }
+};
+
+export const devolverPagamento = async (req, res) => {
+  try {
+    const { idwebhook } = req.params;
+    if (!idwebhook) {
+      return res.status(400).json({ error: "idwebhook e obrigatorio." });
+    }
+
+    const resultado = await devolverPagamentoMachinePay({ idwebhook });
+    res.json(resultado);
+  } catch (error) {
+    console.error("[MachinePay] Erro ao devolver pagamento:", error);
+    res.status(error.status || 502).json({
+      error: error.message || "Nao foi possivel devolver o pagamento.",
     });
   }
 };
