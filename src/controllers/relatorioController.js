@@ -317,6 +317,30 @@ const calcularGastoVariavelPeriodo = async (lojaId, inicio, fim) => {
   return Number(total || 0);
 };
 
+const detalharGastosVariaveisPorTipoPeriodo = async (lojaId, inicio, fim) => {
+  const gastos = await GastoVariavel.findAll({
+    where: {
+      [Op.and]: [sequelizeWhere(cast(col("lojaId"), "text"), String(lojaId))],
+      dataInicio: { [Op.lte]: fim },
+      dataFim: { [Op.gte]: inicio },
+    },
+    attributes: [
+      "nome",
+      [fn("SUM", col("valor")), "valorTotal"],
+      [fn("COUNT", col("id")), "quantidade"],
+    ],
+    group: ["nome"],
+    order: [["nome", "ASC"]],
+    raw: true,
+  });
+
+  return gastos.map((gasto) => ({
+    tipo: gasto.nome || "Sem tipo",
+    valor: Number(gasto.valorTotal || 0),
+    quantidade: Number(gasto.quantidade || 0),
+  }));
+};
+
 // --- DASHBOARD GERAL ---
 export const dashboardRelatorio = async (req, res) => {
   try {
@@ -1543,6 +1567,8 @@ export const gerarRelatorioImpressaoPorLoja = async ({
     inicio,
     fim,
   );
+  const gastosVariaveisPorTipo =
+    await detalharGastosVariaveisPorTipoPeriodo(lojaId, inicio, fim);
 
   const valoresPorMaquina = {};
   registrosDinheiro.forEach((r) => {
@@ -1955,6 +1981,7 @@ export const gerarRelatorioImpressaoPorLoja = async ({
       quantidadeRegistrosSangria: registrosSangria.length,
       ticketPorPremioTotal,
     },
+    gastosVariaveisPorTipo,
     dinheiro: {
       quantidadeRegistros: registrosDinheiro.length,
       registros: registrosDinheiro.map((registro) => ({
@@ -2338,6 +2365,12 @@ export const relatorioTodasLojas = async (req, res) => {
       },
       lojasSemDados,
       lojasComDados: relatoriosPorLoja.length,
+      lojas: relatoriosPorLoja.map(({ loja, dados }) => ({
+        loja: dados?.loja || loja,
+        totais: dados?.totais || {},
+        maquinas: dados?.maquinas || [],
+        gastosVariaveisPorTipo: dados?.gastosVariaveisPorTipo || [],
+      })),
     });
   } catch (error) {
     console.error("Erro ao gerar relatório consolidado de lojas:", error);
