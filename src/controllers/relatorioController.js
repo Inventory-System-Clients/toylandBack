@@ -1479,6 +1479,13 @@ export const gerarRelatorioImpressaoPorLoja = async ({
     order: [["dataColeta", "DESC"]],
   });
 
+  const maquinasDaLoja = await Maquina.findAll({
+    where: { lojaId },
+    attributes: ["id", "codigo", "nome", "valorFicha"],
+    order: [["nome", "ASC"]],
+    raw: true,
+  });
+
   let valorTotalLoja = 0;
   let valorDinheiroLoja = 0;
   let valorCartaoPixLoja = 0;
@@ -1662,6 +1669,23 @@ export const gerarRelatorioImpressaoPorLoja = async ({
   const produtosSairamMap = {};
   const produtosEntraramMap = {};
   const dadosPorMaquina = {};
+
+  maquinasDaLoja.forEach((maquina) => {
+    dadosPorMaquina[maquina.id] = {
+      maquina: {
+        id: maquina.id,
+        codigo: maquina.codigo,
+        nome: maquina.nome,
+        valorFicha: maquina.valorFicha,
+      },
+      fichas: 0,
+      totalSairam: 0,
+      totalAbastecidas: 0,
+      numMovimentacoes: 0,
+      produtosSairam: {},
+      produtosEntraram: {},
+    };
+  });
 
   movimentacoes.forEach((mov) => {
     const ehRetiradaEstoque =
