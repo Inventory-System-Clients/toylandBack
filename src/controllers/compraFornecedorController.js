@@ -36,6 +36,7 @@ const criarMovimento = async ({
   data,
   itens,
   tipo,
+  grupoId,
   transaction,
 }) => {
   const movimento = await MovimentacaoEstoqueLoja.create(
@@ -44,6 +45,7 @@ const criarMovimento = async ({
       usuarioId,
       observacao,
       dataMovimentacao: data,
+      grupoId,
     },
     { transaction },
   );
@@ -146,6 +148,7 @@ export const criarCompraFornecedor = async (req, res) => {
       { transaction },
     );
 
+    const grupoId = compra.id;
     const descricaoCompra = `Compra de ${fornecedor.razaoSocial} - entrada obrigatória na Garagem`;
     await criarMovimento({
       lojaId: garagem.id,
@@ -154,6 +157,7 @@ export const criarCompraFornecedor = async (req, res) => {
       data,
       itens,
       tipo: "entrada",
+      grupoId,
       transaction,
     });
     await alterarEstoque({
@@ -172,6 +176,7 @@ export const criarCompraFornecedor = async (req, res) => {
         data,
         itens,
         tipo: "saida",
+        grupoId,
         transaction,
       });
       await alterarEstoque({
@@ -187,6 +192,7 @@ export const criarCompraFornecedor = async (req, res) => {
         data,
         itens,
         tipo: "entrada",
+        grupoId,
         transaction,
       });
       await alterarEstoque({

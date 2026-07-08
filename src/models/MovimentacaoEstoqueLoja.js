@@ -29,6 +29,12 @@ const MovimentacaoEstoqueLoja = sequelize.define(
       type: DataTypes.STRING,
       allowNull: true,
     },
+    grupoId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      comment:
+        "Vincula movimentações criadas juntas pela mesma compra/transferência (loja + garagem)",
+    },
     dataMovimentacao: {
       type: DataTypes.DATE,
       allowNull: false,

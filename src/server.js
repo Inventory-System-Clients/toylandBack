@@ -233,6 +233,20 @@ const startServer = async () => {
       );
     }
 
+    const colunasMovimentacaoEstoqueLoja = await queryInterface.describeTable(
+      "movimentacao_estoque_lojas",
+    );
+    if (!colunasMovimentacaoEstoqueLoja.grupoId) {
+      const { DataTypes } = await import("sequelize");
+      await queryInterface.addColumn("movimentacao_estoque_lojas", "grupoId", {
+        type: DataTypes.UUID,
+        allowNull: true,
+      });
+      console.log(
+        "✅ Coluna grupoId adicionada às movimentações de estoque de loja!",
+      );
+    }
+
     const colunasGastoVariavel =
       await queryInterface.describeTable("GastoVariavel");
     if (!colunasGastoVariavel.usuarioId) {

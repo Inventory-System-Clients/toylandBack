@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import MovimentacaoEstoqueLoja from "../models/MovimentacaoEstoqueLoja.js";
 import MovimentacaoEstoqueLojaProduto from "../models/MovimentacaoEstoqueLojaProduto.js";
 import {
@@ -234,6 +235,7 @@ export const transferirDaGaragem = async (req, res) => {
     const observacaoTransferencia =
       observacao ||
       `Transferência da Garagem para ${lojaDestino.nome}`;
+    const grupoId = randomUUID();
 
     const movimentacaoOrigem = await MovimentacaoEstoqueLoja.create(
       {
@@ -241,6 +243,7 @@ export const transferirDaGaragem = async (req, res) => {
         usuarioId,
         observacao: observacaoTransferencia,
         dataMovimentacao: data,
+        grupoId,
       },
       { transaction },
     );
@@ -250,6 +253,7 @@ export const transferirDaGaragem = async (req, res) => {
         usuarioId,
         observacao: observacaoTransferencia,
         dataMovimentacao: data,
+        grupoId,
       },
       { transaction },
     );
@@ -315,101 +319,160 @@ export const transferirDaGaragem = async (req, res) => {
 
 // Editar movimentação
 export const editarMovimentacaoEstoqueLoja = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
     const { lojaId, usuarioId, produtos, observacao, dataMovimentacao } =
       req.body;
 
-    const movimentacao = await MovimentacaoEstoqueLoja.findByPk(id);
+    const movimentacao = await MovimentacaoEstoqueLoja.findByPk(id, {
+      transaction,
+    });
 
     if (!movimentacao) {
+      await transaction.rollback();
       return res.status(404).json({ error: "Movimentação não encontrada" });
     }
 
-    // Atualiza campos
-    movimentacao.lojaId = lojaId || movimentacao.lojaId;
-    movimentacao.usuarioId = usuarioId || movimentacao.usuarioId;
-    movimentacao.observacao = observacao || movimentacao.observacao;
-    movimentacao.dataMovimentacao =
-      dataMovimentacao || movimentacao.dataMovimentacao;
+    const emGrupo = Boolean(movimentacao.grupoId);
+    const grupo = emGrupo
+      ? await MovimentacaoEstoqueLoja.findAll({
+          where: { grupoId: movimentacao.grupoId },
+          transaction,
+        })
+      : [movimentacao];
 
-    // Se seu model tiver timestamps automáticos, não precisa desta linha:
-    // movimentacao.atualizadoEm = new Date();
-
-    await movimentacao.save();
-
-    // Atualizar produtos enviados (Remove antigos e cria novos)
-    if (Array.isArray(produtos)) {
-      // Buscar produtos antigos antes de remover
-      const produtosAntigos = await MovimentacaoEstoqueLojaProduto.findAll({
-        where: { movimentacaoEstoqueLojaId: movimentacao.id },
-      });
-
-      await MovimentacaoEstoqueLojaProduto.destroy({
-        where: { movimentacaoEstoqueLojaId: movimentacao.id },
-      });
-
-      // Mapear produtos antigos por produtoId para fácil acesso
-      const mapAntigos = {};
-      for (const prod of produtosAntigos) {
-        mapAntigos[prod.produtoId] = prod;
+    // Loja/usuário só fazem sentido em registros avulsos: mudar a loja de um
+    // dos lados de uma transferência/compra vinculada quebraria o outro lado.
+    for (const registro of grupo) {
+      if (!emGrupo) {
+        registro.lojaId = lojaId || registro.lojaId;
+        registro.usuarioId = usuarioId || registro.usuarioId;
       }
+      registro.observacao = observacao || registro.observacao;
+      registro.dataMovimentacao = dataMovimentacao || registro.dataMovimentacao;
+      await registro.save({ transaction });
+    }
 
-      // Atualizar/ajustar estoque da loja para cada produto
-      const { EstoqueLoja } = await import("../models/index.js");
-      for (const item of produtos) {
-        await MovimentacaoEstoqueLojaProduto.create({
-          movimentacaoEstoqueLojaId: movimentacao.id,
-          produtoId: item.produtoId,
-          quantidade: Number(item.quantidade),
-          tipoMovimentacao: item.tipoMovimentacao || "saida",
+    if (Array.isArray(produtos)) {
+      if (!emGrupo) {
+        // Registro avulso: comportamento original (remove e recria os itens,
+        // permitindo adicionar/remover produtos da movimentação).
+        const produtosAntigos = await MovimentacaoEstoqueLojaProduto.findAll({
+          where: { movimentacaoEstoqueLojaId: movimentacao.id },
+          transaction,
         });
 
-        // Ajuste de estoque considerando tipo antigo e novo
-        const antigo = mapAntigos[item.produtoId];
-        const quantidadeAntiga = antigo ? Number(antigo.quantidade) : 0;
-        const tipoAntigo = antigo
-          ? antigo.tipoMovimentacao
-          : item.tipoMovimentacao || "saida";
-        const quantidadeNova = Number(item.quantidade);
-        const tipoNovo = item.tipoMovimentacao || "saida";
-
-        // Buscar estoque atual
-        const estoque = await EstoqueLoja.findOne({
-          where: { lojaId: movimentacao.lojaId, produtoId: item.produtoId },
+        await MovimentacaoEstoqueLojaProduto.destroy({
+          where: { movimentacaoEstoqueLojaId: movimentacao.id },
+          transaction,
         });
-        if (estoque) {
-          let novaQuantidade = estoque.quantidade;
-          // Reverte o efeito do antigo
+
+        const mapAntigos = {};
+        for (const prod of produtosAntigos) {
+          mapAntigos[prod.produtoId] = prod;
+        }
+
+        for (const item of produtos) {
+          await MovimentacaoEstoqueLojaProduto.create(
+            {
+              movimentacaoEstoqueLojaId: movimentacao.id,
+              produtoId: item.produtoId,
+              quantidade: Number(item.quantidade),
+              tipoMovimentacao: item.tipoMovimentacao || "saida",
+            },
+            { transaction },
+          );
+
+          const antigo = mapAntigos[item.produtoId];
+          const quantidadeAntiga = antigo ? Number(antigo.quantidade) : 0;
+          const tipoAntigo = antigo
+            ? antigo.tipoMovimentacao
+            : item.tipoMovimentacao || "saida";
+          const quantidadeNova = Number(item.quantidade);
+          const tipoNovo = item.tipoMovimentacao || "saida";
+
+          const [estoque] = await EstoqueLoja.findOrCreate({
+            where: { lojaId: movimentacao.lojaId, produtoId: item.produtoId },
+            defaults: { quantidade: 0 },
+            transaction,
+          });
+
+          let novaQuantidade = Number(estoque.quantidade);
           if (tipoAntigo === "entrada") {
             novaQuantidade -= quantidadeAntiga;
           } else {
             novaQuantidade += quantidadeAntiga;
           }
-          // Aplica o efeito do novo
           if (tipoNovo === "entrada") {
             novaQuantidade += quantidadeNova;
           } else {
             novaQuantidade -= quantidadeNova;
           }
           if (novaQuantidade < 0) novaQuantidade = 0;
-          await estoque.update({ quantidade: novaQuantidade });
-        } else {
-          // Se não existe, cria novo registro de estoque
-          let novaQuantidade = 0;
-          if (tipoNovo === "entrada") {
-            novaQuantidade = quantidadeNova;
-          } else {
-            novaQuantidade = 0;
-          }
-          await EstoqueLoja.create({
-            lojaId: movimentacao.lojaId,
-            produtoId: item.produtoId,
-            quantidade: novaQuantidade,
+          await estoque.update({ quantidade: novaQuantidade }, { transaction });
+        }
+      } else {
+        // Registro vinculado (transferência/compra): só a quantidade de cada
+        // produto é corrigida, espelhada em todas as pontas do grupo. A
+        // direção (entrada/saída) de cada lado não muda por aqui.
+        const quantidadesNovasPorProduto = new Map(
+          produtos
+            .filter((item) => item.produtoId)
+            .map((item) => [item.produtoId, Number(item.quantidade)]),
+        );
+
+        for (const registro of grupo) {
+          const itensAtuais = await MovimentacaoEstoqueLojaProduto.findAll({
+            where: { movimentacaoEstoqueLojaId: registro.id },
+            transaction,
           });
+
+          for (const itemAtual of itensAtuais) {
+            if (!quantidadesNovasPorProduto.has(itemAtual.produtoId)) {
+              continue;
+            }
+
+            const quantidadeNova = quantidadesNovasPorProduto.get(
+              itemAtual.produtoId,
+            );
+            const quantidadeAntiga = Number(itemAtual.quantidade);
+            if (
+              !Number.isFinite(quantidadeNova) ||
+              quantidadeNova === quantidadeAntiga
+            ) {
+              continue;
+            }
+
+            const [estoque] = await EstoqueLoja.findOrCreate({
+              where: {
+                lojaId: registro.lojaId,
+                produtoId: itemAtual.produtoId,
+              },
+              defaults: { quantidade: 0 },
+              transaction,
+            });
+
+            const delta = quantidadeNova - quantidadeAntiga;
+            const efeito =
+              itemAtual.tipoMovimentacao === "entrada" ? delta : -delta;
+            const novaQuantidadeEstoque = Math.max(
+              0,
+              Number(estoque.quantidade) + efeito,
+            );
+            await estoque.update(
+              { quantidade: novaQuantidadeEstoque },
+              { transaction },
+            );
+
+            itemAtual.quantidade = quantidadeNova;
+            await itemAtual.save({ transaction });
+          }
         }
       }
     }
+
+    await transaction.commit();
 
     // Retornar movimentação completa
     const movimentacaoCompleta = await MovimentacaoEstoqueLoja.findByPk(
@@ -431,6 +494,7 @@ export const editarMovimentacaoEstoqueLoja = async (req, res) => {
 
     return res.json(movimentacaoCompleta);
   } catch (error) {
+    if (!transaction.finished) await transaction.rollback();
     console.error("Erro ao editar:", error);
     return res.status(500).json({ error: "Erro ao editar movimentação" });
   }
@@ -438,48 +502,68 @@ export const editarMovimentacaoEstoqueLoja = async (req, res) => {
 
 // Deletar movimentação
 export const deletarMovimentacaoEstoqueLoja = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
-    const movimentacao = await MovimentacaoEstoqueLoja.findByPk(id);
+    const movimentacao = await MovimentacaoEstoqueLoja.findByPk(id, {
+      transaction,
+    });
     if (!movimentacao) {
+      await transaction.rollback();
       return res.status(404).json({ error: "Movimentação não encontrada" });
     }
 
-    // Buscar todos os produtos associados à movimentação
-    const produtosMovimentados = await MovimentacaoEstoqueLojaProduto.findAll({
-      where: { movimentacaoEstoqueLojaId: movimentacao.id },
-    });
+    // Se faz parte de uma transferência/compra vinculada, exclui o grupo
+    // inteiro junto para não deixar o estoque de um dos lados desatualizado.
+    const grupo = movimentacao.grupoId
+      ? await MovimentacaoEstoqueLoja.findAll({
+          where: { grupoId: movimentacao.grupoId },
+          transaction,
+        })
+      : [movimentacao];
 
-    // Atualizar o estoque da loja para cada produto
-    const { EstoqueLoja } = await import("../models/index.js");
-    for (const item of produtosMovimentados) {
-      const estoque = await EstoqueLoja.findOne({
-        where: { lojaId: movimentacao.lojaId, produtoId: item.produtoId },
+    for (const registro of grupo) {
+      const produtosMovimentados = await MovimentacaoEstoqueLojaProduto.findAll({
+        where: { movimentacaoEstoqueLojaId: registro.id },
+        transaction,
       });
-      if (estoque) {
-        let novaQuantidade = estoque.quantidade;
+
+      for (const item of produtosMovimentados) {
+        const [estoque] = await EstoqueLoja.findOrCreate({
+          where: { lojaId: registro.lojaId, produtoId: item.produtoId },
+          defaults: { quantidade: 0 },
+          transaction,
+        });
+
+        let novaQuantidade = Number(estoque.quantidade);
         if ((item.tipoMovimentacao || "saida") === "entrada") {
           // Se era uma entrada, ao deletar deve subtrair do estoque
-          novaQuantidade = estoque.quantidade - item.quantidade;
+          novaQuantidade -= item.quantidade;
         } else {
           // Se era uma saída, ao deletar deve somar de volta ao estoque
-          novaQuantidade = estoque.quantidade + item.quantidade;
+          novaQuantidade += item.quantidade;
         }
         if (novaQuantidade < 0) novaQuantidade = 0;
-        await estoque.update({ quantidade: novaQuantidade });
+        await estoque.update({ quantidade: novaQuantidade }, { transaction });
       }
+
+      await MovimentacaoEstoqueLojaProduto.destroy({
+        where: { movimentacaoEstoqueLojaId: registro.id },
+        transaction,
+      });
+      await registro.destroy({ transaction });
     }
 
-    // Remove os produtos associados
-    await MovimentacaoEstoqueLojaProduto.destroy({
-      where: { movimentacaoEstoqueLojaId: movimentacao.id },
+    await transaction.commit();
+
+    return res.json({
+      message:
+        grupo.length > 1
+          ? `Movimentação excluída com sucesso (${grupo.length - 1} registro(s) vinculado(s) removido(s) junto).`
+          : "Movimentação excluída com sucesso",
     });
-
-    // Remove a movimentação
-    await movimentacao.destroy();
-
-    return res.json({ message: "Movimentação excluída com sucesso" });
   } catch (error) {
+    if (!transaction.finished) await transaction.rollback();
     console.error("Erro ao excluir:", error);
     return res.status(500).json({ error: "Erro ao excluir movimentação" });
   }
