@@ -1,4 +1,16 @@
-import { Maquina, Loja, Movimentacao } from "../models/index.js";
+import { Op } from "sequelize";
+import { Maquina, Loja, Movimentacao, UsuarioLoja } from "../models/index.js";
+
+// Resolve os ids de loja que o usuário pode ver (null = ADMIN, sem restrição)
+const obterLojaIdsPermitidos = async (usuario) => {
+  if (usuario.role === "ADMIN") return null;
+
+  const permissoes = await UsuarioLoja.findAll({
+    where: { usuarioId: usuario.id },
+    attributes: ["lojaId"],
+  });
+  return permissoes.map((permissao) => permissao.lojaId);
+};
 
 // US05 - Listar máquinas
 export const listarMaquinas = async (req, res) => {
@@ -6,7 +18,14 @@ export const listarMaquinas = async (req, res) => {
     const { lojaId, incluirInativas } = req.query;
     const where = {};
 
-    if (lojaId) {
+    const lojaIdsPermitidos = await obterLojaIdsPermitidos(req.usuario);
+    if (lojaIdsPermitidos !== null) {
+      // Funcionário: só vê máquinas das lojas às quais tem acesso
+      if (lojaId && !lojaIdsPermitidos.includes(lojaId)) {
+        return res.json([]);
+      }
+      where.lojaId = lojaId || { [Op.in]: lojaIdsPermitidos };
+    } else if (lojaId) {
       where.lojaId = lojaId;
     }
 
@@ -51,6 +70,11 @@ export const obterMaquina = async (req, res) => {
 
     if (!maquina) {
       return res.status(404).json({ error: "Máquina não encontrada" });
+    }
+
+    const lojaIdsPermitidos = await obterLojaIdsPermitidos(req.usuario);
+    if (lojaIdsPermitidos !== null && !lojaIdsPermitidos.includes(maquina.lojaId)) {
+      return res.status(403).json({ error: "Sem acesso a esta máquina" });
     }
 
     res.json(maquina);
