@@ -361,7 +361,7 @@ export const atualizarVariosEstoques = async (req, res) => {
     const ajustesHistorico = [];
 
     for (const item of estoques) {
-      const { produtoId, quantidade, estoqueMinimo } = item;
+      const { produtoId, quantidade, estoqueMinimo, ativo } = item;
 
       if (!produtoId || quantidade === undefined) {
         console.log("Item inválido ignorado:", item);
@@ -382,6 +382,7 @@ export const atualizarVariosEstoques = async (req, res) => {
           defaults: {
             quantidade,
             estoqueMinimo: estoqueMinimo !== undefined ? estoqueMinimo : 0,
+            ativo: ativo !== undefined ? ativo : true,
           },
         });
         const quantidadeAnteriorRegistro = created
@@ -394,6 +395,9 @@ export const atualizarVariosEstoques = async (req, res) => {
           estoque.quantidade = quantidade;
           if (estoqueMinimo !== undefined) {
             estoque.estoqueMinimo = estoqueMinimo;
+          }
+          if (ativo !== undefined) {
+            estoque.ativo = ativo;
           }
           await estoque.save();
           await registrarAuditoriaEstoque({
