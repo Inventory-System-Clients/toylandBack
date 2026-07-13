@@ -535,11 +535,12 @@ export const alertasEstoqueLoja = async (req, res) => {
       ],
     });
 
-    // Filtrar produtos com estoque baixo
+    // Filtrar produtos ativos com estoque baixo
     const alertas = estoques.filter((est) => {
+      if (est.ativo === false) return false;
       const minimoDefinido =
         est.estoqueMinimo || est.produto?.estoqueMinimo || 0;
-      return est.quantidade <= minimoDefinido;
+      return minimoDefinido > 0 && est.quantidade <= minimoDefinido;
     });
 
     res.json({
