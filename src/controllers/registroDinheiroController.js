@@ -386,10 +386,12 @@ const calcularGastosPeriodo = async (lojaId, inicio, fim) => {
 const registroDinheiroController = {
   async obterProximoPeriodo(req, res) {
     try {
-      const { lojaId, maquinaId } = req.query;
+      const { lojaId, maquinaId, fallbackDias } = req.query;
       if (!lojaId || !maquinaId) {
         return res.status(400).json({ error: "Informe a loja e a máquina." });
       }
+
+      const diasFallback = Number(fallbackDias) > 0 ? Number(fallbackDias) : 7;
 
       const where = {
         lojaId,
@@ -407,7 +409,7 @@ const registroDinheiroController = {
       const agora = new Date();
       const inicio = ultimoRegistro?.fim
         ? new Date(new Date(ultimoRegistro.fim).getTime() + 60 * 1000)
-        : new Date(agora.getTime() - 7 * DAY_IN_MS);
+        : new Date(agora.getTime() - diasFallback * DAY_IN_MS);
       const fim = inicio > agora ? inicio : agora;
 
       return res.json({
@@ -471,6 +473,47 @@ const registroDinheiroController = {
       console.error("[MachinePay] Erro ao consultar fechamento:", err);
       return res.status(502).json({
         error: "Não foi possível consultar a Machine Pay.",
+        details: err.message,
+      });
+    }
+  },
+
+  async fecharMachinePay(req, res) {
+    try {
+      const { maquinaId, inicio, fim, valor } = req.body;
+
+      if (!maquinaId || !inicio || !fim) {
+        return res.status(400).json({
+          error: "Informe máquina, início e fim para fechar na Machine Pay.",
+        });
+      }
+
+      const maquina = await Maquina.findByPk(maquinaId, {
+        attributes: ["id", "machinePayPosId"],
+      });
+
+      if (!maquina) {
+        return res.status(404).json({ error: "Máquina não encontrada." });
+      }
+
+      if (!maquina.machinePayPosId) {
+        return res.status(400).json({
+          error: "Esta máquina ainda não possui ID da Machine Pay cadastrado.",
+        });
+      }
+
+      const resultado = await fecharFechamentoMachinePay({
+        posId: maquina.machinePayPosId,
+        inicio,
+        fim,
+        valor: normalizarValorMonetario(valor),
+      });
+
+      return res.json({ concluido: resultado.concluido });
+    } catch (err) {
+      console.error("[MachinePay] Erro ao fechar:", err);
+      return res.status(502).json({
+        error: "Não foi possível fechar na Machine Pay.",
         details: err.message,
       });
     }
@@ -718,48 +761,8 @@ const registroDinheiroController = {
 
         await transaction.commit();
 
-        let fechamentoMachinePay = {
-          executado: false,
-          concluido: false,
-          erro: null,
-        };
-
-        if (!ehRegistroTotalLoja && maquina) {
-          try {
-            const maquinaFechamento = await Maquina.findByPk(maquina, {
-              attributes: ["id", "machinePayPosId"],
-            });
-
-            if (maquinaFechamento?.machinePayPosId) {
-              const resultadoFechamento = await fecharFechamentoMachinePay({
-                posId: maquinaFechamento.machinePayPosId,
-                inicio,
-                fim,
-                valor: dadosRegistro.valorDinheiro,
-              });
-
-              fechamentoMachinePay = {
-                executado: true,
-                concluido: resultadoFechamento.concluido,
-                erro: null,
-              };
-            }
-          } catch (machinePayError) {
-            console.error(
-              "[MachinePay] Erro ao executar fechamento:",
-              machinePayError,
-            );
-            fechamentoMachinePay = {
-              executado: true,
-              concluido: false,
-              erro: machinePayError.message,
-            };
-          }
-        }
-
         return res.status(201).json({
           ...registro.toJSON(),
-          fechamentoMachinePay,
           dinheiroPeloContador,
         });
       } catch (dbError) {

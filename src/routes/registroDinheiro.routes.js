@@ -13,6 +13,11 @@ router.get(
   autenticar,
   registroDinheiroController.obterProximoPeriodo,
 );
+router.post(
+  "/fechar-machine-pay",
+  autenticar,
+  registroDinheiroController.fecharMachinePay,
+);
 
 // POST /registro-dinheiro
 router.post("/", autenticar, registroDinheiroController.criar);
