@@ -950,9 +950,13 @@ export const buscarAlertasDeInconsistencia = async (req, res) => {
         atual.contadorOut !== null && atual.contadorOut !== 0;
 
       // Se a diferença não bate com a quantidade de saída/fichas
+      // (IN só é conferido quando há fichas registradas na coleta)
+      const outMismatch = diffOut !== (atual.sairam || 0);
+      const inMismatch =
+        (atual.fichas || 0) > 0 && diffIn !== (atual.fichas || 0);
       if (
         temContadores &&
-        (diffOut !== (atual.sairam || 0) || diffIn !== (atual.fichas || 0)) &&
+        (outMismatch || inMismatch) &&
         !ignoradosSet.has(alertaId)
       ) {
         alertas.push({
@@ -2523,6 +2527,7 @@ export const alertasMovimentacaoIn = async (req, res) => {
       if (
         atual.contadorIn !== null &&
         atual.contadorIn !== 0 &&
+        (atual.fichas || 0) > 0 &&
         diffIn !== (atual.fichas || 0) &&
         !ignoradosSet.has(alertaId)
       ) {

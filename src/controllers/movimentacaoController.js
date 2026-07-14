@@ -915,8 +915,11 @@ export const problemaMaquina = async (req, res) => {
       const anterior = movimentacoes[1];
       const diffOut = (atual.contadorOut || 0) - (anterior.contadorOut || 0);
       const diffIn = (atual.contadorIn || 0) - (anterior.contadorIn || 0);
+      const outMismatch = diffOut !== (atual.sairam || 0);
+      const inMismatch =
+        (atual.fichas || 0) > 0 && diffIn !== (atual.fichas || 0);
       if (
-        (diffOut !== (atual.sairam || 0) || diffIn !== (atual.fichas || 0)) &&
+        (outMismatch || inMismatch) &&
         !(atual.contadorOut === 0 && atual.contadorIn === 0)
       ) {
         problemas.push({
