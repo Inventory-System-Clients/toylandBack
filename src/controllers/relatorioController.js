@@ -2603,14 +2603,17 @@ export const alertasBomDesempenho = async (req, res) => {
       const diffIn = (atual.contadorIn || 0) - (anterior.contadorIn || 0);
       const quantidadeSaiu = Number(atual.sairam || 0);
       const jogadasEsperadas = Number(maquina.jogadasBoasPorPelucia);
+      const valorJogada = Number(maquina.valorFicha || 0);
 
-      if (diffIn <= 0 || quantidadeSaiu <= 0) {
+      if (diffIn <= 0 || quantidadeSaiu <= 0 || valorJogada <= 0) {
         continue;
       }
 
-      const jogadasPorPelucia = Number((diffIn / quantidadeSaiu).toFixed(2));
+      const jogadasPorPelucia = Number(
+        (diffIn / valorJogada / quantidadeSaiu).toFixed(2),
+      );
       const contadorInEsperado = Number(
-        (jogadasEsperadas * quantidadeSaiu).toFixed(2),
+        (jogadasEsperadas * valorJogada * quantidadeSaiu).toFixed(2),
       );
 
       if (jogadasPorPelucia !== jogadasEsperadas) {
@@ -2631,6 +2634,7 @@ export const alertasBomDesempenho = async (req, res) => {
           contador_in: atual.contadorIn || 0,
           contador_in_anterior: anterior.contadorIn || 0,
           sairam: quantidadeSaiu,
+          valorJogada,
           jogadasBoasPorPelucia: jogadasEsperadas,
           jogadasPorPelucia,
           diffIn,
