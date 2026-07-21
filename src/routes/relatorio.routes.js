@@ -106,5 +106,11 @@ router.get(
   autorizarRole("ADMIN"),
   alertasAbastecimentoIncompleto,
 );
+router.delete(
+  "/alertas-abastecimento-incompleto/:id",
+  autenticar,
+  autorizarRole("ADMIN"),
+  ignorarAlertaMovimentacao,
+);
 
 export default router;
