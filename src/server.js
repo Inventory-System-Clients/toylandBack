@@ -41,6 +41,7 @@ const allowedOrigins = new Set([
   "https://www.toyland.selfmachine.com.br",
   "https://agarramaisop.selfmachine.com.br",
   "https://grupogk.selfmachine.com.br",
+  "https://www.toylandmachine.com.br/",
   ...environmentOrigins,
 ]);
 
