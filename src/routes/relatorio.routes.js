@@ -64,6 +64,12 @@ router.get(
   autorizarRole("ADMIN"),
   alertasBomDesempenho,
 );
+router.delete(
+  "/alertas-bom-desempenho/:id",
+  autenticar,
+  autorizarRole("ADMIN"),
+  ignorarAlertaMovimentacao,
+);
 router.get(
   "/alertas-pelucia-gigante",
   autenticar,

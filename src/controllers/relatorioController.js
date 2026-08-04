@@ -2565,6 +2565,8 @@ export const alertasBomDesempenho = async (req, res) => {
       include: [{ model: Loja, as: "loja", attributes: ["nome"] }],
     });
     const alertas = [];
+    const ignorados = await AlertaIgnorado.findAll();
+    const ignoradosSet = new Set(ignorados.map((a) => a.alertaId));
 
     for (const maquina of maquinas) {
       if (
@@ -2618,12 +2620,16 @@ export const alertasBomDesempenho = async (req, res) => {
 
       if (jogadasPorPelucia !== jogadasEsperadas) {
         const estaAbaixoDaMeta = jogadasPorPelucia < jogadasEsperadas;
+        const alertaId = `${maquina.id}-${atual.id}-${
+          estaAbaixoDaMeta ? "jogadas-abaixo" : "jogadas-acima"
+        }`;
+        if (ignoradosSet.has(alertaId)) {
+          continue;
+        }
         const metadadosAtual = montarMetadadosMovimentacao(atual);
         const metadadosAnterior = montarMetadadosMovimentacao(anterior);
         alertas.push({
-          id: `${maquina.id}-${atual.id}-${
-            estaAbaixoDaMeta ? "jogadas-abaixo" : "jogadas-acima"
-          }`,
+          id: alertaId,
           tipo: estaAbaixoDaMeta
             ? "jogadas_abaixo_do_esperado"
             : "jogadas_acima_do_esperado",
