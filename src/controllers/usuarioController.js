@@ -109,9 +109,9 @@ export const criarUsuario = async (req, res) => {
       role,
     });
 
-    // Se for funcionário e tiver lojas permitidas, criar permissões
+    // Se for funcionário ou machinepay e tiver lojas permitidas, criar permissões
     if (
-      role === "FUNCIONARIO" &&
+      ["FUNCIONARIO", "MACHINEPAY"].includes(role) &&
       lojasPermitidas &&
       lojasPermitidas.length > 0
     ) {
@@ -194,9 +194,9 @@ export const atualizarUsuario = async (req, res) => {
       // Remover permissões antigas
       await UsuarioLoja.destroy({ where: { usuarioId: usuario.id } });
 
-      // Adicionar novas permissões (apenas se for FUNCIONARIO)
+      // Adicionar novas permissões (apenas se for FUNCIONARIO ou MACHINEPAY)
       if (
-        (role || usuario.role) === "FUNCIONARIO" &&
+        ["FUNCIONARIO", "MACHINEPAY"].includes(role || usuario.role) &&
         lojasPermitidas.length > 0
       ) {
         const permissoes = lojasPermitidas.map((lojaId) => ({
