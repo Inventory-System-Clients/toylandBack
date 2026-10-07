@@ -61,25 +61,19 @@ const decifrarToken = (valor) => {
 
 const centavosParaReais = (centavos) => Number((centavos / 100).toFixed(2));
 
-// Só entram máquinas ativas, com ID Machine Pay e "TOYLAND" no nome (ou no
-// código, quando o nome está vazio). Aceita "Toyland", "TOY LAND" etc.
-const FILTRO_NOME_TOYLAND = "toy\\s*land";
-
+// Só entram máquinas ativas com ID Machine Pay (do cadastro TOYLAND na
+// Machine Pay) preenchido.
 const whereMaquinasMachinePay = {
   ativo: true,
-  machinePayPosId: { [Op.ne]: null },
-  [Op.or]: [
-    { nome: { [Op.iRegexp]: FILTRO_NOME_TOYLAND } },
-    { codigo: { [Op.iRegexp]: FILTRO_NOME_TOYLAND } },
-  ],
+  machinePayPosId: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: "" }] },
 };
 
 const nomeMaquina = (maquina) => maquina?.nome || maquina?.codigo || "-";
 
-// Onde o link vale (sempre dentro das máquinas TOYLAND):
+// Onde o link vale:
 // - máquina fixa (ex.: link de teste) = só aquela máquina;
-// - lojas escolhidas = máquinas TOYLAND dessas lojas;
-// - nenhum dos dois = todas as máquinas TOYLAND.
+// - lojas escolhidas = máquinas Machine Pay dessas lojas;
+// - nenhum dos dois = todas as máquinas Machine Pay.
 const whereMaquinasDoLink = (link) => {
   if (link?.maquinaId) return { ...whereMaquinasMachinePay, id: link.maquinaId };
   if (link?.lojaIds?.length) {
@@ -364,7 +358,7 @@ export const enviarCreditoPublico = async (req, res) => {
 
 export const listarLinks = async (req, res) => {
   try {
-    const [links, maquinasToyland] = await Promise.all([
+    const [links, maquinasPermitidasLista] = await Promise.all([
       CreditoRemotoLink.findAll({
         include: [
           { model: Usuario, as: "criadoPor", attributes: ["nome"] },
@@ -381,8 +375,8 @@ export const listarLinks = async (req, res) => {
     res.json({
       links: links.map((link) => resumoLink(link, nomesLojas)),
       lojasMachinePay,
-      maquinasPermitidas: maquinasToyland.map(nomeMaquina),
-      maquinasMachinePay: maquinasToyland.map((maquina) => ({
+      maquinasPermitidas: maquinasPermitidasLista.map(nomeMaquina),
+      maquinasMachinePay: maquinasPermitidasLista.map((maquina) => ({
         id: maquina.id,
         nome: nomeMaquina(maquina),
       })),
@@ -446,7 +440,7 @@ export const criarLink = async (req, res) => {
         : null;
       if (!maquina) {
         return res.status(400).json({
-          error: "Máquina inválida: precisa estar ativa, ter ID Machine Pay e TOYLAND no nome.",
+          error: "Máquina inválida: precisa estar ativa e ter ID Machine Pay.",
         });
       }
     }
@@ -458,7 +452,7 @@ export const criarLink = async (req, res) => {
       );
       if (validas.length !== lojaIdsRecebidos.length) {
         return res.status(400).json({
-          error: "Loja inválida: precisa estar ativa e ter máquina TOYLAND com ID Machine Pay.",
+          error: "Loja inválida: precisa estar ativa e ter máquina com ID Machine Pay.",
         });
       }
       lojas = validas;

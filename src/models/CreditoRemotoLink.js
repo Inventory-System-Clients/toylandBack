@@ -2,8 +2,8 @@ import { DataTypes } from "sequelize";
 import { sequelize } from "../database/connection.js";
 
 // Link temporário de crédito remoto (voucher). Quem tem o link só consegue
-// enviar crédito Machine Pay para as máquinas Machine Pay com "TOYLAND" no
-// nome, até o limite em reais. O token em si nunca é
+// enviar crédito Machine Pay para as máquinas com ID Machine Pay (cadastro
+// TOYLAND), até o limite em reais. O token em si nunca é
 // salvo em texto puro — a busca é pelo hash SHA-256 (tokenHash) e a cópia
 // pro admin fica cifrada com uma chave derivada do JWT_SECRET (tokenCifrado),
 // então quem só lê o banco não consegue reconstruir o link.
@@ -45,7 +45,7 @@ const CreditoRemotoLink = sequelize.define(
         model: "maquinas",
         key: "id",
       },
-      comment: "Se preenchido, o link só envia para esta máquina (ex.: link de teste). Vazio = máquinas TOYLAND",
+      comment: "Se preenchido, o link só envia para esta máquina (ex.: link de teste). Vazio = todas as máquinas Machine Pay",
     },
     lojaIds: {
       type: DataTypes.ARRAY(DataTypes.UUID),
