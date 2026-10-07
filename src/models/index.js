@@ -28,6 +28,8 @@ import ListaComprasProduto from "./ListaComprasProduto.js";
 import Fornecedor from "./Fornecedor.js";
 import CompraFornecedor from "./CompraFornecedor.js";
 import CompraFornecedorProduto from "./CompraFornecedorProduto.js";
+import CreditoRemotoLink from "./CreditoRemotoLink.js";
+import CreditoRemotoEnvio from "./CreditoRemotoEnvio.js";
 // Movimentação de Veículo -> Veículo e Usuário
 MovimentacaoVeiculo.belongsTo(Veiculo, {
   as: "veiculo",
@@ -363,6 +365,28 @@ CompraFornecedorProduto.belongsTo(Produto, {
   as: "produto",
 });
 
+// Link de crédito remoto (voucher) -> Envios (cada crédito mandado pelo link)
+CreditoRemotoLink.hasMany(CreditoRemotoEnvio, {
+  foreignKey: "linkId",
+  as: "envios",
+});
+CreditoRemotoEnvio.belongsTo(CreditoRemotoLink, {
+  foreignKey: "linkId",
+  as: "link",
+});
+CreditoRemotoEnvio.belongsTo(Maquina, {
+  foreignKey: "maquinaId",
+  as: "maquina",
+});
+CreditoRemotoLink.belongsTo(Maquina, {
+  foreignKey: "maquinaId",
+  as: "maquina",
+});
+CreditoRemotoLink.belongsTo(Usuario, {
+  foreignKey: "criadoPorId",
+  as: "criadoPor",
+});
+
 export {
   Usuario,
   Loja,
@@ -394,4 +418,6 @@ export {
   Fornecedor,
   CompraFornecedor,
   CompraFornecedorProduto,
+  CreditoRemotoLink,
+  CreditoRemotoEnvio,
 };

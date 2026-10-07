@@ -265,6 +265,21 @@ const startServer = async () => {
       );
     }
 
+    // Barreira final do voucher (crédito remoto): o próprio Postgres recusa
+    // qualquer gravação em que o valor usado passe do limite.
+    await sequelize.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'check_credito_remoto_limite'
+        ) THEN
+          ALTER TABLE credito_remoto_links
+            ADD CONSTRAINT check_credito_remoto_limite
+            CHECK (usado_centavos >= 0 AND usado_centavos <= limite_centavos AND limite_centavos > 0);
+        END IF;
+      END $$;
+    `);
+
     const { Usuario } = await import("./models/index.js");
     const adminEmail = process.env.ADMIN_EMAIL || "admin@agarramais.com";
     const adminExistente = await Usuario.findOne({
