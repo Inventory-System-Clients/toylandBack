@@ -9,6 +9,7 @@ const stripHtml = (html) =>
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
+    .replace(/&#(?:160|x0*a0);/gi, " ")
     .replace(/&amp;/gi, "&")
     .replace(/\s+/g, " ")
     .trim();
@@ -38,13 +39,18 @@ const SINAIS = {
 // único marcador presente exatamente uma vez por máquina.
 const dividirLinhas = (html) =>
   String(html || "")
-    .split(/class="td_ops acao"/)
+    .split(/class=["'][^"']*\btd_ops\b[^"']*\bacao\b[^"']*["']/i)
     .slice(1);
 
 export function parsearLinhaMaquina(linhaHtml) {
   const texto = stripHtml(linhaHtml);
 
-  const posId = casar(linhaHtml, /Caixa:\s*(\d+)/);
+  // O painel alterna entre texto puro e IDs envolvidos por tags/entidades HTML.
+  // Primeiro lemos o texto renderizado; se o rótulo mudar, usamos o ID do handler.
+  const posId =
+    casar(texto, /Caixa:\s*#?\s*(\d+)/i) ||
+    casar(linhaHtml, /(?:onclick=["']stats\(\s*|stats\(\s*)(\d+)/i) ||
+    casar(linhaHtml, /copiarDadosMaquina\(\s*(\d+)/i);
   if (!posId) return null;
 
   const menu = linhaHtml.match(/mnu_op_maq\((\d+)\s*,\s*(\d+)\)/);
