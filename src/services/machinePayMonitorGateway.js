@@ -1,5 +1,6 @@
 import WebSocketClient from "ws";
 import { parsearVendasStats } from "./machinePayVendasParser.js";
+import { getMachinePayLoginConfig } from "./machinePayConfig.js";
 
 // Integração com o painel Machine Pay (Cyberpix) — não existe API pública documentada,
 // então a integração é feita via scraping autenticado do painel administrativo web
@@ -17,14 +18,7 @@ const base64 = (value) =>
   Buffer.from(String(value ?? ""), "utf8").toString("base64");
 
 const baseUrl = () => {
-  const url = process.env.MACHINE_PAY_LOGIN_URL;
-  if (!url) {
-    throw new MachinePayServiceError(
-      500,
-      "MACHINE_PAY_LOGIN_URL não configurada",
-    );
-  }
-  return url.endsWith("/") ? url : `${url}/`;
+  return getMachinePayLoginConfig().baseUrl;
 };
 
 // Mimetiza os headers que o navegador manda numa sessão real logada — o painel
@@ -84,8 +78,8 @@ const PADRAO_FALHA_LOGIN = /senha|login incorreto|acesso negado/i;
 // Login por cookie de sessão, refeito a cada operação (sem cache entre chamadas —
 // evita lidar com expiração de sessão, ao custo de 1 requisição extra por operação).
 async function login() {
-  const usuarioLogin = process.env.MACHINE_PAY_LOGIN;
-  const senha = process.env.MACHINE_PAY_PASSWORD;
+  const { login: usuarioLogin, password: senha } =
+    getMachinePayLoginConfig();
 
   if (!usuarioLogin || !senha) {
     throw new MachinePayServiceError(

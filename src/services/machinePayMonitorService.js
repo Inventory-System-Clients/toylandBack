@@ -20,6 +20,7 @@ import {
 import { parsearPainelMaquinas } from "./machinePayPainelParser.js";
 import { atualizarLocalizacoesPorIp } from "./machinePayGeoIpService.js";
 import { atualizarLocalizacoesLojas } from "./lojaLocalizacaoService.js";
+import { machinePayLoginConfigurado } from "./machinePayConfig.js";
 
 const FUSO_HORARIO = "America/Sao_Paulo";
 
@@ -55,12 +56,7 @@ const usrsDoEnv = () =>
     .map((valor) => valor.trim())
     .filter(Boolean);
 
-export const monitorConfigurado = () =>
-  Boolean(
-    process.env.MACHINE_PAY_LOGIN_URL &&
-      process.env.MACHINE_PAY_LOGIN &&
-      process.env.MACHINE_PAY_PASSWORD,
-  );
+export const monitorConfigurado = machinePayLoginConfigurado;
 
 // Máximo de extratos consultados por coleta para descobrir o dono de um posId
 // (cada consulta baixa uma página do painel).
@@ -156,7 +152,7 @@ async function executarColeta() {
   if (!monitorConfigurado()) {
     throw new MachinePayServiceError(
       500,
-      "Monitoramento Machine Pay não configurado (MACHINE_PAY_LOGIN_URL / MACHINE_PAY_LOGIN / MACHINE_PAY_PASSWORD)",
+      "Monitoramento Machine Pay não configurado (MACHINE_PAY_LOGIN / MACHINE_PAY_PASSWORD)",
     );
   }
 

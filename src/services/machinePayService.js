@@ -1,7 +1,6 @@
 import WebSocketClient from "ws";
+import { getMachinePayLoginConfig } from "./machinePayConfig.js";
 
-const DEFAULT_LOGIN_URL =
-  "https://www.cyberpix.com.br/pix-adesivo-clientes/";
 const DEFAULT_API_TEMPLATE =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/maquinas.php?acao=stats&posid={posid}&dataini={inicio64}&datafim={fim64}&chave={chave}";
 const DEFAULT_FECHAMENTO_TEMPLATE =
@@ -370,7 +369,8 @@ const parseExtratoMaquina = (html) => {
 const buildFechamentoUrl = ({ posId, inicio, fim, valor = 0 }) => {
   const inicioFormatado = formatInicio(inicio);
   const fimFormatado = formatFim(fim);
-  const loginMachinePay = required("MACHINE_PAY_LOGIN");
+  const loginMachinePay =
+    getMachinePayLoginConfig().login || required("MACHINE_PAY_LOGIN");
 
   return (
     (process.env.MACHINE_PAY_FECHAMENTO_TEMPLATE ||
@@ -405,14 +405,21 @@ const buildFechamentoUrl = ({ posId, inicio, fim, valor = 0 }) => {
 };
 
 const login = async () => {
-  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const { baseUrl: loginUrl, login: usuario, password: senha } =
+    getMachinePayLoginConfig();
   const initialResponse = await fetch(loginUrl, { redirect: "manual" });
   let cookies = extractCookies(initialResponse);
 
   const url = new URL("index.php", loginUrl);
   url.searchParams.set("acao", "login");
-  url.searchParams.set("usr", encodeBase64(required("MACHINE_PAY_LOGIN")));
-  url.searchParams.set("snh", encodeBase64(required("MACHINE_PAY_PASSWORD")));
+  url.searchParams.set(
+    "usr",
+    encodeBase64(usuario || required("MACHINE_PAY_LOGIN")),
+  );
+  url.searchParams.set(
+    "snh",
+    encodeBase64(senha || required("MACHINE_PAY_PASSWORD")),
+  );
 
   const loginResponse = await fetch(url, {
     headers: {
@@ -493,7 +500,7 @@ let _adminUsrCache = null;
 
 const descobrirAdminUsr = async () => {
   if (_adminUsrCache) return _adminUsrCache;
-  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const { baseUrl: loginUrl } = getMachinePayLoginConfig();
   try {
     const { body } = await fetchMachinePay(
       `${loginUrl}maquinas.php?acao=maquinas`,
@@ -509,7 +516,7 @@ const descobrirAdminUsr = async () => {
 };
 
 const buscarStatusViaFiltro = async ({ usrId, posId }) => {
-  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const { baseUrl: loginUrl } = getMachinePayLoginConfig();
   const chave = Buffer.from(String(posId), "utf8").toString("base64");
   const url = `${loginUrl}maquinas.php?acao=filtro&idusr=${usrId}&chave=${encodeURIComponent(chave)}`;
   const { body } = await fetchMachinePay(url, {
@@ -645,7 +652,7 @@ export const consultarTransacoesMachinePay = async ({ posId, inicio, fim }) => {
 };
 
 export const devolverPagamentoMachinePay = async ({ idwebhook }) => {
-  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const { baseUrl: loginUrl } = getMachinePayLoginConfig();
   const url = `${loginUrl}maquinas.php?acao=devolver&idwebhook=${encodeURIComponent(idwebhook)}`;
   const { body, status } = await fetchMachinePay(url, {
     headers: { "X-Requested-With": "XMLHttpRequest" },
@@ -676,7 +683,7 @@ const publicarMqttWebSocket = async (posId, valorFinal, idwebhook) => {
   const dominio = process.env.MACHINE_PAY_WS_DOMINIO || "cyberpix.com.br";
   const token = process.env.MACHINE_PAY_WS_TOKEN || "1";
   const usuario = process.env.MACHINE_PAY_WS_USUARIO || "1";
-  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
+  const { baseUrl: loginUrl } = getMachinePayLoginConfig();
   const wsUrl = `wss://${dominio}:65501/?token=${encodeURIComponent(token)}&scope=panel`;
 
   const { cookies } = await login();
