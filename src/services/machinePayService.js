@@ -56,6 +56,19 @@ const parseMoney = (value) => {
   return Number.isFinite(number) ? number : 0;
 };
 
+// O extrato de transações (linha a linha, "Cliente Pagou"/"Banco Retirou"/
+// "Você Recebeu") usa ponto como separador decimal (ex: "R$ 30.00"), ao
+// contrário do bloco de totais agregados (PIX/Débito/Crédito) que usa
+// vírgula (ex: "R$ 14.349,01") e é tratado por parseMoney acima.
+const parseMoneyPontoDecimal = (value) => {
+  if (!value) return 0;
+
+  const normalized = String(value).replace(/[^\d.-]/g, "");
+  const number = Number(normalized);
+
+  return Number.isFinite(number) ? number : 0;
+};
+
 const stripHtml = (html) =>
   html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -248,22 +261,30 @@ const parseDataHoraTabela = (texto) => {
 };
 
 const capturarValorPorLabel = (rowHtml, label) => {
+  // No HTML real o <b>valor</b> e o <span>rótulo</span> são irmãos dentro
+  // de uma div flex, sem <br> entre eles — só espaço/quebra de linha.
   const regex = new RegExp(
-    `<b[^>]*>([^<]*)<\\/b>\\s*<br>\\s*<span[^>]*>\\s*${label}\\s*<\\/span>`,
+    `<b[^>]*>([^<]*)<\\/b>\\s*<span[^>]*>\\s*${label}\\s*<\\/span>`,
     "i",
   );
   const match = rowHtml.match(regex);
-  return match ? parseMoney(stripHtml(match[1])) : 0;
+  return match ? parseMoneyPontoDecimal(stripHtml(match[1])) : 0;
 };
 
 const capturarPulsoMachinePay = (rowHtml) => {
-  const match = rowHtml.match(/<b[^>]*>\s*(Pulso[^<]*)<\/b>/i);
+  // O status do pulso/tarifador vem do <select id="pgNNNN"> da coluna
+  // Telemetrias (opções: "Consultado"/"Aguardando"/"Expirado ❌"), não de um
+  // <b>Pulso...</b> como a marcação antiga assumia.
+  const match = rowHtml.match(
+    /<option\s+selected\s+value="([^"]*)">([^<]*)<\/option>/i,
+  );
   if (!match) return { pulsoConsultado: false, pulsoStatus: "" };
 
-  const pulsoStatus = stripHtml(match[1]);
+  const valor = match[1];
+  const pulsoStatus = stripHtml(match[2]);
 
   return {
-    pulsoConsultado: /liberado/i.test(pulsoStatus),
+    pulsoConsultado: valor === "ok" || /consultado/i.test(pulsoStatus),
     pulsoStatus,
   };
 };
@@ -277,11 +298,16 @@ const parseLinhaExtratoMaquina = (rowHtml) => {
 
   const dataHora = parseDataHoraTabela(dataHoraTexto);
 
+  // devolve('idpg') é a chamada real do botão "Devolver" (usa o ID de
+  // pagamento, o mesmo do "ID PG:"/mostrar_mp). apagarRegistro2(id) é o
+  // botão "Excluir" e usa um ID de registro interno diferente — não serve
+  // como idwebhook, senão a devolução vai pro pagamento errado.
   const idwebhookMatch =
+    rowHtml.match(/devolve\('(\d+)'\)/) ||
     rowHtml.match(/devolver\((\d+)\)/) ||
     rowHtml.match(/id="dv(\d+)"/) ||
-    rowHtml.match(/apagarRegistro2\((\d+)\)/) ||
-    rowHtml.match(/change_pagto\((\d+)\)/);
+    rowHtml.match(/change_pagto\((\d+)\)/) ||
+    rowHtml.match(/apagarRegistro2\((\d+)\)/);
   const idwebhook = idwebhookMatch ? idwebhookMatch[1] : null;
   const id = idwebhook || dataHoraTexto;
 
@@ -289,15 +315,27 @@ const parseLinhaExtratoMaquina = (rowHtml) => {
   const taxa = capturarValorPorLabel(rowHtml, "Banco Retirou");
   const liquido = capturarValorPorLabel(rowHtml, "Voc[eê] Recebeu");
 
+  // Div do método/banco tem outras propriedades CSS entre font-size e o
+  // fechamento do style (font-family, text-align, etc) e sempre começa com
+  // ✅ (Pix) ou 💳 (cartão) — usa esse marcador em vez de tentar casar o
+  // style inteiro, que muda conforme o meio de pagamento.
   const bancoMetodoMatch = rowHtml.match(
-    /font-size:\s*13px;\s*line-height:\s*1\.3;">\s*([\s\S]*?)<\/div>/,
+    /white-space:\s*nowrap;\s*text-shadow:[^"]*;">\s*([\s\S]*?)<\/div>/,
   );
   const bancoMetodo = bancoMetodoMatch ? stripHtml(bancoMetodoMatch[1]) : "";
 
-  const statusMatch = rowHtml.match(/<strong>([^<]+)<\/strong>/);
+  // O selo de situação (ex: "Venda Aprovada") fica num <span> com o badge
+  // verde, não num <strong> — o único <strong> da linha é o ID PG.
+  const statusMatch =
+    rowHtml.match(
+      /background-color:#e8f5e9;color:#28a745;[\s\S]*?>\s*(?:<img[^>]*>\s*)?([^<]+?)\s*<\/span>/,
+    ) || rowHtml.match(/>(Venda [^<]+?)</);
   const statusVenda = statusMatch ? statusMatch[1].trim() : "";
 
-  const referenciaVenda = extractValue(rowHtml, /\u{1F50D}\s*<span[^>]*>([^<]+)<\/span>/u);
+  const referenciaVenda = extractValue(
+    rowHtml,
+    /\u{1F50D}\s*ID PG:\s*<strong[^>]*>([^<]+)<\/strong>/u,
+  );
   const { pulsoConsultado, pulsoStatus } = capturarPulsoMachinePay(rowHtml);
 
   return {

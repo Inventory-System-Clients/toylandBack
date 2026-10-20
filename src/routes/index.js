@@ -27,6 +27,7 @@ import assistenteIaRoutes from "./assistenteIa.routes.js";
 import fornecedorRoutes from "./fornecedor.routes.js";
 import compraFornecedorRoutes from "./compraFornecedor.routes.js";
 import machinePayRoutes from "./machinePay.routes.js";
+import creditoRemotoRoutes from "./creditoRemoto.routes.js";
 const router = express.Router();
 
 router.use("/auth", authRoutes);
@@ -45,6 +46,7 @@ router.use("/assistente-ia", assistenteIaRoutes);
 router.use("/fornecedores", fornecedorRoutes);
 router.use("/compras-fornecedores", compraFornecedorRoutes);
 router.use("/machine-pay", machinePayRoutes);
+router.use("/credito-remoto", creditoRemotoRoutes);
 
 router.use("/veiculos", veiculoRoutes);
 router.use("/alertas-veiculos", alertasVeiculosRoutes);
