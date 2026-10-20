@@ -13,7 +13,6 @@ import {
   sequelize,
 } from "../models/index.js";
 import {
-  descobrirUsrPorExtrato,
   listarMaquinasCadastradas,
   MachinePayServiceError,
 } from "./machinePayMonitorGateway.js";
@@ -50,79 +49,16 @@ const piorSinal = (atual, novo) => {
   return GRAVIDADE_SINAL[novo] > GRAVIDADE_SINAL[atual] ? novo : atual;
 };
 
-const usrsDoEnv = () =>
-  String(process.env.MACHINE_PAY_USR || "")
-    .split(",")
-    .map((valor) => valor.trim())
-    .filter(Boolean);
-
 export const monitorConfigurado = machinePayLoginConfigurado;
 
-// Máximo de extratos consultados por coleta para descobrir o dono de um posId
-// (cada consulta baixa uma página do painel).
-const MAX_DESCOBERTAS_POR_COLETA = 5;
-// posIds cujo extrato não revelou o dono (caixa sem pagamento no período):
-// não repetimos a consulta a cada coleta. Zera quando o servidor reinicia.
-const posIdsSemDono = new Set();
-
-// Contas (usr) monitoradas = todas as salvas em machine_pay_contas + as das
-// máquinas cadastradas (machinePayUsrId) + MACHINE_PAY_USR (opcional). Uma
-// máquina sem usr que ainda não apareceu em nenhuma conta lida tem a conta
-// descoberta pelo extrato do posId; toda conta nova é salva e passa a ser lida
-// sempre, sem precisar ser descoberta de novo.
-async function resolverContasMonitoradas() {
-  const [maquinas, contasSalvas] = await Promise.all([
-    Maquina.findAll({
-      where: {
-        machinePayPosId: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: "" }] },
-      },
-      attributes: ["id", "machinePayPosId", "machinePayUsrId"],
-    }),
-    MachinePayConta.findAll({ attributes: ["usrId"], raw: true }),
-  ]);
-  const usrs = new Set([
-    ...contasSalvas.map((c) => c.usrId),
-    ...usrsDoEnv(),
-    ...maquinas.map((m) => m.machinePayUsrId).filter(Boolean),
-  ]);
-
-  // Dono já conhecido pela última coleta (machine_pay_status guarda o usr).
-  const semUsr = maquinas.filter((m) => !m.machinePayUsrId);
-  if (semUsr.length) {
-    const conhecidos = await MachinePayStatus.findAll({
-      where: { posId: semUsr.map((m) => String(m.machinePayPosId).trim()) },
-      attributes: ["posId", "usrId"],
-      raw: true,
-    });
-    const usrPorPosId = new Map(conhecidos.map((s) => [s.posId, s.usrId]));
-    let descobertas = 0;
-
-    for (const maquina of semUsr) {
-      const posId = String(maquina.machinePayPosId).trim();
-      let usrId = usrPorPosId.get(posId);
-      if (!usrId && !posIdsSemDono.has(posId) && descobertas < MAX_DESCOBERTAS_POR_COLETA) {
-        descobertas += 1;
-        usrId = await descobrirUsrPorExtrato(posId).catch(() => null);
-        if (!usrId) posIdsSemDono.add(posId);
-      }
-      if (usrId) {
-        usrs.add(usrId);
-        await maquina.update({ machinePayUsrId: usrId });
-      }
-    }
-  }
-
-  const salvas = new Set(contasSalvas.map((c) => c.usrId));
-  const novas = [...usrs].filter((usrId) => !salvas.has(usrId));
-  if (novas.length) {
-    await MachinePayConta.bulkCreate(
-      novas.map((usrId) => ({ usrId })),
-      { ignoreDuplicates: true },
-    );
-  }
-
+async function resolverMaquinasCadastradas() {
+  const maquinas = await Maquina.findAll({
+    where: {
+      machinePayPosId: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: "" }] },
+    },
+    attributes: ["id", "machinePayPosId", "machinePayUsrId"],
+  });
   return {
-    usrs: [...usrs],
     posIds: new Set(maquinas.map((m) => String(m.machinePayPosId).trim())),
     totalCadastradas: maquinas.length,
   };
@@ -162,13 +98,11 @@ async function executarColeta() {
     );
   }
 
-  const { usrs, posIds, totalCadastradas } = await resolverContasMonitoradas();
-  if (!usrs.length) {
+  const { posIds, totalCadastradas } = await resolverMaquinasCadastradas();
+  if (!posIds.size) {
     throw new MachinePayServiceError(
       400,
-      totalCadastradas
-        ? "Não foi possível descobrir a conta Machine Pay das máquinas cadastradas (nenhum caixa com pagamento no último mês). Preencha o usr em uma máquina ou MACHINE_PAY_USR."
-        : "Nenhuma máquina do sistema tem o POS ID da Machine Pay cadastrado. Preencha o POS ID em pelo menos uma máquina.",
+      "Nenhuma máquina do sistema tem o POS ID da Machine Pay cadastrado. Preencha o POS ID em pelo menos uma máquina.",
     );
   }
 
@@ -176,21 +110,19 @@ async function executarColeta() {
   const vistos = new Set();
   const caixasLivres = new Set();
   const posIdsEncontrados = new Set();
-  for (const usrId of usrs) {
-    const html = await listarMaquinasCadastradas({ usrId });
-    for (const leitura of parsearPainelMaquinas(html)) {
-      // O painel pode listar toda a conta. O Toyland monitora somente os
-      // leitores cujo POS ID está vinculado a uma máquina cadastrada no sistema.
-      if (!posIds.has(String(leitura.posId).trim())) continue;
-      posIdsEncontrados.add(String(leitura.posId).trim());
-      if (vistos.has(leitura.posId)) continue;
-      vistos.add(leitura.posId);
-      if (ehCaixaLivre(leitura.nomePonto)) {
-        caixasLivres.add(leitura.posId);
-        continue;
-      }
-      leituras.push({ ...leitura, nomePonto: leitura.nomePonto?.slice(0, 255) || null });
+  // O endpoint padrão da integração Toyland lista os leitores disponíveis na
+  // conta autenticada. O POS ID cadastrado no sistema define quais entram aqui.
+  const html = await listarMaquinasCadastradas();
+  for (const leitura of parsearPainelMaquinas(html)) {
+    if (!posIds.has(String(leitura.posId).trim())) continue;
+    posIdsEncontrados.add(String(leitura.posId).trim());
+    if (vistos.has(leitura.posId)) continue;
+    vistos.add(leitura.posId);
+    if (ehCaixaLivre(leitura.nomePonto)) {
+      caixasLivres.add(leitura.posId);
+      continue;
     }
+    leituras.push({ ...leitura, nomePonto: leitura.nomePonto?.slice(0, 255) || null });
   }
 
   if (!leituras.length) {
@@ -198,7 +130,7 @@ async function executarColeta() {
       502,
       posIdsEncontrados.size
         ? "Os POS IDs cadastrados no Toyland só correspondem a caixas livres, que não entram no monitoramento."
-        : `Nenhum dos ${totalCadastradas} POS IDs cadastrados no Toyland foi encontrado nas contas Machine Pay vinculadas. Confira o usr da conta cadastrado em cada máquina.`,
+        : `Nenhum dos ${totalCadastradas} POS IDs cadastrados no Toyland apareceu na listagem da conta autenticada. Confira os POS IDs e o acesso dessa conta no painel Machine Pay.`,
     );
   }
 
