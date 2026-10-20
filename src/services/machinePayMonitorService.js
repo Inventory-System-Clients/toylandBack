@@ -122,6 +122,7 @@ async function executarColeta() {
   const vistos = new Set();
   const caixasLivres = new Set();
   const posIdsEncontrados = new Set();
+  const posIdsPainel = new Set();
   // O painel pode exigir usr para mostrar uma conta específica. Tentamos as
   // contas configuradas/usadas pelas máquinas e também a listagem padrão.
   const consultasConta = [...usrs.map((usrId) => ({ usrId })), {}];
@@ -129,6 +130,7 @@ async function executarColeta() {
     try {
       const html = await listarMaquinasCadastradas(conta);
       for (const leitura of parsearPainelMaquinas(html)) {
+        posIdsPainel.add(String(leitura.posId).trim());
         if (!posIds.has(String(leitura.posId).trim())) continue;
         posIdsEncontrados.add(String(leitura.posId).trim());
         if (vistos.has(leitura.posId)) continue;
@@ -149,7 +151,7 @@ async function executarColeta() {
       502,
       posIdsEncontrados.size
         ? "Os POS IDs cadastrados no Toyland só correspondem a caixas livres, que não entram no monitoramento."
-        : `Nenhum dos ${totalCadastradas} POS IDs cadastrados no Toyland apareceu na listagem da conta autenticada. Confira os POS IDs e o acesso dessa conta no painel Machine Pay.`,
+        : `Nenhum dos ${totalCadastradas} POS IDs cadastrados no Toyland apareceu entre os ${posIdsPainel.size} leitores retornados pelas contas Machine Pay consultadas. Confira os POS IDs e os vínculos de conta (usr) das máquinas.`,
     );
   }
 

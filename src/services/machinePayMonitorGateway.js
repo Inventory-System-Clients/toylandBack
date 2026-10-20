@@ -437,8 +437,14 @@ export async function consultarStatusMaquina({ posId, usrId }) {
 
 export async function listarMaquinasCadastradas({ usrId } = {}) {
   const cookie = await login();
-  const query = usrId ? `&usr=${encodeURIComponent(usrId)}` : "";
-  const url = `${baseUrl()}maquinas.php?acao=maquinas${query}`;
+  const query = new URLSearchParams({ acao: "maquinas" });
+  if (usrId) {
+    // O painel Toyland usa idusr em filtros autenticados; versões do painel
+    // também aceitam usr na listagem. Enviar ambos mantém compatibilidade.
+    query.set("idusr", String(usrId));
+    query.set("usr", String(usrId));
+  }
+  const url = `${baseUrl()}maquinas.php?${query.toString()}`;
 
   const resposta = await fetch(url, {
     headers: construirHeaders(cookie),
