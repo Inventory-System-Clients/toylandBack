@@ -135,6 +135,8 @@ const startServer = async () => {
     // Sync database - cria novas tabelas/colunas mas não altera existentes
     // Para evitar erros de sintaxe SQL ao adicionar constraints
     await sequelize.sync();
+    // Inicia as coletas do monitor depois que o banco está pronto.
+    await import("./jobs/machinePayMonitor.js");
     console.log("✅ Database sincronizado!");
 
     // Migration: machine_pay_usr_id em maquinas (idempotente)
@@ -142,6 +144,14 @@ const startServer = async () => {
       ALTER TABLE maquinas
       ADD COLUMN IF NOT EXISTS machine_pay_usr_id VARCHAR(50) DEFAULT NULL;
     `).catch(() => {});
+    await sequelize.query(`
+      ALTER TABLE maquinas
+      ADD COLUMN IF NOT EXISTS regiao VARCHAR(10) NOT NULL DEFAULT 'CAPITAL';
+    `);
+    await sequelize.query(`
+      ALTER TABLE maquinas
+      ADD COLUMN IF NOT EXISTS horario_funcionamento JSONB DEFAULT NULL;
+    `);
     console.log("✅ Coluna machine_pay_usr_id verificada!");
 
     // Migration: role MACHINEPAY no enum (idempotente)
