@@ -28,16 +28,6 @@ import ListaComprasProduto from "./ListaComprasProduto.js";
 import Fornecedor from "./Fornecedor.js";
 import CompraFornecedor from "./CompraFornecedor.js";
 import CompraFornecedorProduto from "./CompraFornecedorProduto.js";
-import MachinePayStatus from "./MachinePayStatus.js";
-import MachinePayDiario from "./MachinePayDiario.js";
-import MachinePayEvento from "./MachinePayEvento.js";
-import MachinePayConta from "./MachinePayConta.js";
-import MachinePayHorario from "./MachinePayHorario.js";
-import MachinePayLocalizacao from "./MachinePayLocalizacao.js";
-import MachinePayVendaHora from "./MachinePayVendaHora.js";
-import LojaLocalizacao from "./LojaLocalizacao.js";
-import RoteiroLocalizacao from "./RoteiroLocalizacao.js";
-import { sequelize } from "../database/connection.js";
 import CreditoRemotoLink from "./CreditoRemotoLink.js";
 import CreditoRemotoEnvio from "./CreditoRemotoEnvio.js";
 // Movimentação de Veículo -> Veículo e Usuário
@@ -428,16 +418,6 @@ export {
   Fornecedor,
   CompraFornecedor,
   CompraFornecedorProduto,
-  MachinePayStatus,
-  MachinePayDiario,
-  MachinePayEvento,
-  MachinePayConta,
-  MachinePayHorario,
-  MachinePayLocalizacao,
-  MachinePayVendaHora,
-  LojaLocalizacao,
-  RoteiroLocalizacao,
-  sequelize,
   CreditoRemotoLink,
   CreditoRemotoEnvio,
 };
