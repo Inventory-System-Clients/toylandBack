@@ -52,14 +52,26 @@ const piorSinal = (atual, novo) => {
 export const monitorConfigurado = machinePayLoginConfigurado;
 
 async function resolverMaquinasCadastradas() {
-  const maquinas = await Maquina.findAll({
-    where: {
-      machinePayPosId: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: "" }] },
-    },
-    attributes: ["id", "machinePayPosId", "machinePayUsrId"],
-  });
+  const [maquinas, contasSalvas] = await Promise.all([
+    Maquina.findAll({
+      where: {
+        machinePayPosId: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: "" }] },
+      },
+      attributes: ["id", "machinePayPosId", "machinePayUsrId"],
+    }),
+    MachinePayConta.findAll({ attributes: ["usrId"], raw: true }),
+  ]);
+  const usrs = new Set([
+    ...String(process.env.MACHINE_PAY_USR || "")
+      .split(",")
+      .map((usrId) => usrId.trim())
+      .filter(Boolean),
+    ...maquinas.map((maquina) => maquina.machinePayUsrId).filter(Boolean),
+    ...contasSalvas.map((conta) => conta.usrId).filter(Boolean),
+  ]);
   return {
     posIds: new Set(maquinas.map((m) => String(m.machinePayPosId).trim())),
+    usrs: [...usrs],
     totalCadastradas: maquinas.length,
   };
 }
@@ -98,7 +110,7 @@ async function executarColeta() {
     );
   }
 
-  const { posIds, totalCadastradas } = await resolverMaquinasCadastradas();
+  const { posIds, usrs, totalCadastradas } = await resolverMaquinasCadastradas();
   if (!posIds.size) {
     throw new MachinePayServiceError(
       400,
@@ -110,19 +122,26 @@ async function executarColeta() {
   const vistos = new Set();
   const caixasLivres = new Set();
   const posIdsEncontrados = new Set();
-  // O endpoint padrão da integração Toyland lista os leitores disponíveis na
-  // conta autenticada. O POS ID cadastrado no sistema define quais entram aqui.
-  const html = await listarMaquinasCadastradas();
-  for (const leitura of parsearPainelMaquinas(html)) {
-    if (!posIds.has(String(leitura.posId).trim())) continue;
-    posIdsEncontrados.add(String(leitura.posId).trim());
-    if (vistos.has(leitura.posId)) continue;
-    vistos.add(leitura.posId);
-    if (ehCaixaLivre(leitura.nomePonto)) {
-      caixasLivres.add(leitura.posId);
-      continue;
+  // O painel pode exigir usr para mostrar uma conta específica. Tentamos as
+  // contas configuradas/usadas pelas máquinas e também a listagem padrão.
+  const consultasConta = [...usrs.map((usrId) => ({ usrId })), {}];
+  for (const conta of consultasConta) {
+    try {
+      const html = await listarMaquinasCadastradas(conta);
+      for (const leitura of parsearPainelMaquinas(html)) {
+        if (!posIds.has(String(leitura.posId).trim())) continue;
+        posIdsEncontrados.add(String(leitura.posId).trim());
+        if (vistos.has(leitura.posId)) continue;
+        vistos.add(leitura.posId);
+        if (ehCaixaLivre(leitura.nomePonto)) {
+          caixasLivres.add(leitura.posId);
+          continue;
+        }
+        leituras.push({ ...leitura, nomePonto: leitura.nomePonto?.slice(0, 255) || null });
+      }
+    } catch (error) {
+      if (conta === consultasConta.at(-1) && !leituras.length) throw error;
     }
-    leituras.push({ ...leitura, nomePonto: leitura.nomePonto?.slice(0, 255) || null });
   }
 
   if (!leituras.length) {
