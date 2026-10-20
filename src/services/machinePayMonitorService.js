@@ -73,7 +73,9 @@ const posIdsSemDono = new Set();
 async function resolverContasMonitoradas() {
   const [maquinas, contasSalvas] = await Promise.all([
     Maquina.findAll({
-      where: { machinePayPosId: { [Op.ne]: null } },
+      where: {
+        machinePayPosId: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: "" }] },
+      },
       attributes: ["id", "machinePayPosId", "machinePayUsrId"],
     }),
     MachinePayConta.findAll({ attributes: ["usrId"], raw: true }),
@@ -119,7 +121,11 @@ async function resolverContasMonitoradas() {
     );
   }
 
-  return { usrs: [...usrs], totalCadastradas: maquinas.length };
+  return {
+    usrs: [...usrs],
+    posIds: new Set(maquinas.map((m) => String(m.machinePayPosId).trim())),
+    totalCadastradas: maquinas.length,
+  };
 }
 
 let coletaEmAndamento = null;
@@ -156,7 +162,7 @@ async function executarColeta() {
     );
   }
 
-  const { usrs, totalCadastradas } = await resolverContasMonitoradas();
+  const { usrs, posIds, totalCadastradas } = await resolverContasMonitoradas();
   if (!usrs.length) {
     throw new MachinePayServiceError(
       400,
@@ -169,9 +175,14 @@ async function executarColeta() {
   const leituras = [];
   const vistos = new Set();
   const caixasLivres = new Set();
+  const posIdsEncontrados = new Set();
   for (const usrId of usrs) {
     const html = await listarMaquinasCadastradas({ usrId });
     for (const leitura of parsearPainelMaquinas(html)) {
+      // O painel pode listar toda a conta. O Toyland monitora somente os
+      // leitores cujo POS ID está vinculado a uma máquina cadastrada no sistema.
+      if (!posIds.has(String(leitura.posId).trim())) continue;
+      posIdsEncontrados.add(String(leitura.posId).trim());
       if (vistos.has(leitura.posId)) continue;
       vistos.add(leitura.posId);
       if (ehCaixaLivre(leitura.nomePonto)) {
@@ -185,7 +196,9 @@ async function executarColeta() {
   if (!leituras.length) {
     throw new MachinePayServiceError(
       502,
-      "Nenhuma máquina encontrada no painel Machine Pay (layout alterado ou sessão expirada)",
+      posIdsEncontrados.size
+        ? "Os POS IDs cadastrados no Toyland só correspondem a caixas livres, que não entram no monitoramento."
+        : `Nenhum dos ${totalCadastradas} POS IDs cadastrados no Toyland foi encontrado nas contas Machine Pay vinculadas. Confira o usr da conta cadastrado em cada máquina.`,
     );
   }
 

@@ -163,6 +163,7 @@ export async function carregarStatusFormatados() {
   const agora = new Date();
   const hoje = dataBrasil(agora);
   return status
+    .filter((s) => vinculos.has(String(s.posId).trim()))
     .filter((s) => !ehCaixaLivre(s.nomePonto))
     .map((s) => formatarStatus(s, vinculos, pontos, agora, hoje));
 }
