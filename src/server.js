@@ -310,6 +310,13 @@ const startServer = async () => {
       } else {
         console.log("⏸️ Limpeza automática de dados antigos desativada");
       }
+
+      // Monitor dos leitores (página Machine Pay detalhado)
+      import("./jobs/machinePayMonitor.js")
+        .then(({ iniciarJobsMachinePayMonitor }) => iniciarJobsMachinePayMonitor())
+        .catch((error) =>
+          console.error("❌ Erro ao iniciar monitor Machine Pay:", error.message),
+        );
     });
   } catch (error) {
     console.error("❌ Erro ao conectar com o banco de dados:", error);

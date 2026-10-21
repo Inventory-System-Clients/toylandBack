@@ -30,6 +30,14 @@ import CompraFornecedor from "./CompraFornecedor.js";
 import CompraFornecedorProduto from "./CompraFornecedorProduto.js";
 import CreditoRemotoLink from "./CreditoRemotoLink.js";
 import CreditoRemotoEnvio from "./CreditoRemotoEnvio.js";
+import MachinePayStatus from "./MachinePayStatus.js";
+import MachinePayDiario from "./MachinePayDiario.js";
+import MachinePayEvento from "./MachinePayEvento.js";
+import MachinePayConta from "./MachinePayConta.js";
+import MachinePayHorario from "./MachinePayHorario.js";
+import MachinePayLocalizacao from "./MachinePayLocalizacao.js";
+import MachinePayVendaHora from "./MachinePayVendaHora.js";
+import LojaLocalizacao from "./LojaLocalizacao.js";
 // Movimentação de Veículo -> Veículo e Usuário
 MovimentacaoVeiculo.belongsTo(Veiculo, {
   as: "veiculo",
@@ -420,4 +428,12 @@ export {
   CompraFornecedorProduto,
   CreditoRemotoLink,
   CreditoRemotoEnvio,
+  MachinePayStatus,
+  MachinePayDiario,
+  MachinePayEvento,
+  MachinePayConta,
+  MachinePayHorario,
+  MachinePayLocalizacao,
+  MachinePayVendaHora,
+  LojaLocalizacao,
 };
