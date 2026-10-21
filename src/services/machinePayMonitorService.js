@@ -13,8 +13,10 @@ import {
   MachinePayConta,
 } from "../models/index.js";
 import {
+  descobrirUsrPorExtrato,
   listarMaquinasCadastradas,
   MachinePayServiceError,
+  usrDaContaLogada,
 } from "./machinePayDetalhadoService.js";
 import { parsearPainelMaquinas } from "./machinePayPainelParser.js";
 import { atualizarLocalizacoesPorIp } from "./machinePayGeoIpService.js";
@@ -86,17 +88,15 @@ export async function whereMaquinasCadastradas() {
   return { posId: { [Op.in]: await posIdsCadastrados() } };
 }
 
+// Máximo de extratos consultados por coleta para achar o dono de um POS ID
+// que não apareceu nas contas já conhecidas (o resto fica para as próximas).
+const MAX_DESCOBERTAS_POR_COLETA = 10;
+
+// O usr da conta logada (revenda) nunca é lido, mesmo que esteja salvo numa
+// máquina por engano: nesse caso a coleta descobre o dono certo pelo extrato.
 async function resolverContasMonitoradas() {
-  const usrs = await usrsCadastrados();
-
-  if (usrs.length) {
-    await MachinePayConta.bulkCreate(
-      usrs.map((usrId) => ({ usrId })),
-      { ignoreDuplicates: true },
-    );
-  }
-
-  return usrs;
+  const usrLogado = await usrDaContaLogada();
+  return (await usrsCadastrados()).filter((usrId) => usrId !== usrLogado);
 }
 
 let coletaEmAndamento = null;
@@ -133,30 +133,56 @@ async function executarColeta() {
     );
   }
 
-  const usrs = await resolverContasMonitoradas();
-  if (!usrs.length) {
+  const posIdsDoSistema = new Set(await posIdsCadastrados());
+  if (!posIdsDoSistema.size) {
     throw new MachinePayServiceError(
       400,
-      "Nenhuma máquina do sistema tem o Usr ID da Machine Pay. Preencha o Usr ID em pelo menos uma máquina.",
+      "Nenhuma máquina do sistema tem o POS ID da Machine Pay. Preencha o POS ID em pelo menos uma máquina.",
     );
   }
-  const posIdsDoSistema = new Set(await posIdsCadastrados());
+  const usrs = await resolverContasMonitoradas();
 
   const leituras = [];
   const vistos = new Set();
   const caixasLivres = new Set();
-  for (const usrId of usrs) {
+  const contasLidas = new Set();
+  const lerConta = async (usrId) => {
+    if (contasLidas.has(usrId)) return;
+    contasLidas.add(usrId);
     const html = await listarMaquinasCadastradas({ usrId });
     for (const leitura of parsearPainelMaquinas(html)) {
-      if (vistos.has(leitura.posId)) continue;
-      vistos.add(leitura.posId);
       // Só leitores de máquinas do sistema (a conta pode ter de outros clientes)
-      if (!posIdsDoSistema.has(leitura.posId)) continue;
+      if (!posIdsDoSistema.has(leitura.posId) || vistos.has(leitura.posId)) continue;
+      vistos.add(leitura.posId);
       if (ehCaixaLivre(leitura.nomePonto)) {
         caixasLivres.add(leitura.posId);
         continue;
       }
       leituras.push({ ...leitura, nomePonto: leitura.nomePonto?.slice(0, 255) || null });
+    }
+  };
+
+  for (const usrId of usrs) await lerConta(usrId);
+
+  // POS IDs cadastrados que não estavam nas contas conhecidas (usr vazio ou
+  // errado na máquina): o dono vem do extrato do caixa e a conta dele é lida.
+  const faltando = [...posIdsDoSistema].filter((posId) => !vistos.has(posId));
+  for (const posId of faltando.slice(0, MAX_DESCOBERTAS_POR_COLETA)) {
+    if (vistos.has(posId)) continue;
+    const usrId = await descobrirUsrPorExtrato(posId).catch(() => null);
+    if (usrId) await lerConta(usrId);
+  }
+
+  // Corrige o Usr ID das máquinas pelo dono real que o painel mostrou
+  const usrPorPosId = new Map(leituras.filter((l) => l.usrId).map((l) => [l.posId, l.usrId]));
+  const maquinasComPos = await Maquina.findAll({
+    where: { machinePayPosId: { [Op.in]: [...usrPorPosId.keys()] } },
+    attributes: ["id", "machinePayPosId", "machinePayUsrId"],
+  });
+  for (const maquina of maquinasComPos) {
+    const usrId = usrPorPosId.get(String(maquina.machinePayPosId).trim());
+    if (usrId && usrId !== maquina.machinePayUsrId) {
+      await maquina.update({ machinePayUsrId: usrId });
     }
   }
 

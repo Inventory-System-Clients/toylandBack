@@ -456,6 +456,19 @@ export async function listarMaquinasCadastradas({ usrId } = {}) {
   return resposta.text();
 }
 
+// usr da própria conta logada (a de revenda): a listagem sem usr devolve os
+// leitores dela. Essa conta não é cliente e nada dela deve ser lido ou salvo.
+let usrContaLogadaCache = null;
+export async function usrDaContaLogada() {
+  if (usrContaLogadaCache) return usrContaLogadaCache;
+  const match = (await listarMaquinasCadastradas()).match(/mnu_op_maq\(\d+\s*,\s*(\d+)\)/);
+  if (match) usrContaLogadaCache = match[1];
+  return usrContaLogadaCache;
+}
+
+export const ehUsrDaContaLogada = async (usrId) =>
+  Boolean(usrId) && String(usrId) === (await usrDaContaLogada().catch(() => null));
+
 // O extrato de um caixa (acao=stats&posid=) lista os pagamentos com
 // mostrar_mp('<idPagamento>', <usrDoCliente>) — dá o dono do posId sem saber
 // o usr de antemão. Só funciona se o caixa teve pagamento no período padrão.
@@ -468,7 +481,8 @@ export async function descobrirUsrPorExtrato(posId) {
   );
   if (!resposta.ok) return null;
   const match = (await resposta.text()).match(/mostrar_mp\('[^']*'\s*,\s*(\d+)\s*\)/);
-  return match ? match[1] : null;
+  if (!match || (await ehUsrDaContaLogada(match[1]))) return null;
+  return match[1];
 }
 
 export async function descobrirUsrDePosId(posId) {

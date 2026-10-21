@@ -7,7 +7,10 @@ import {
   devolverPagamentoMachinePay,
   descobrirUsrDePosId,
 } from "../services/machinePayService.js";
-import { listarMaquinasCadastradas } from "../services/machinePayDetalhadoService.js";
+import {
+  ehUsrDaContaLogada,
+  listarMaquinasCadastradas,
+} from "../services/machinePayDetalhadoService.js";
 import { parsearPainelMaquinas } from "../services/machinePayPainelParser.js";
 
 const atributosMaquina = [
@@ -233,6 +236,12 @@ export const listarLeitoresDaConta = async (req, res) => {
     const usrId = String(req.params.usrId || "").trim();
     if (!/^\d+$/.test(usrId)) {
       return res.status(400).json({ error: "Usr ID inválido" });
+    }
+    if (await ehUsrDaContaLogada(usrId)) {
+      return res.status(400).json({
+        error:
+          "Esse Usr ID é da conta de login do painel, não de um cliente. Clique em Atualizar no Usr ID (com o POS ID preenchido) para buscar o usr certo.",
+      });
     }
 
     const html = await listarMaquinasCadastradas({ usrId });
