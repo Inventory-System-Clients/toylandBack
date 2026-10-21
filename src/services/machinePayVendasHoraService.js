@@ -10,7 +10,7 @@ import {
   dataBrasil,
   ehCaixaLivre,
   monitorConfigurado,
-  whereContasCadastradas,
+  whereMaquinasCadastradas,
 } from "./machinePayMonitorService.js";
 import { blocosDeDias, listarDatas, resumirVendasPorHora, somarDias } from "../utils/machinePayAnalise.js";
 
@@ -35,7 +35,7 @@ async function diasPendentes(ontem) {
   const inicio = somarDias(ontem, -(DIAS_HISTORICO_HORA - 1));
   const [leitores, lidos] = await Promise.all([
     MachinePayStatus.findAll({
-      where: await whereContasCadastradas(),
+      where: await whereMaquinasCadastradas(),
       attributes: ["posId", "nomePonto"],
       raw: true,
     }),

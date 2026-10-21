@@ -13,7 +13,7 @@ import {
   ehCaixaLivre,
   monitorConfigurado,
   obterUltimoErroColeta,
-  whereContasCadastradas,
+  whereMaquinasCadastradas,
 } from "../services/machinePayMonitorService.js";
 import {
   MachinePayServiceError,
@@ -151,7 +151,7 @@ const formatarStatus = (s, vinculos, pontos, agora, hoje) => {
 
 export async function carregarStatusFormatados() {
   const [status, vinculos, configPontos] = await Promise.all([
-    MachinePayStatus.findAll({ where: await whereContasCadastradas(), raw: true }),
+    MachinePayStatus.findAll({ where: await whereMaquinasCadastradas(), raw: true }),
     mapaVinculos(),
     MachinePayHorario.findAll({ raw: true }),
   ]);
@@ -606,7 +606,7 @@ const CREDITO_MAXIMO_REAIS = Number(process.env.MACHINE_PAY_CREDITO_MAXIMO || 50
 // Só age sobre leitores que o monitor conhece (evita posId arbitrário)
 const leitorConhecido = async (posId) =>
   MachinePayStatus.findOne({
-    where: { posId: String(posId), ...(await whereContasCadastradas()) },
+    where: { posId: String(posId), ...(await whereMaquinasCadastradas()) },
     attributes: ["posId", "nomePonto"],
   });
 

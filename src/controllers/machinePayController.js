@@ -7,6 +7,8 @@ import {
   devolverPagamentoMachinePay,
   descobrirUsrDePosId,
 } from "../services/machinePayService.js";
+import { listarMaquinasCadastradas } from "../services/machinePayDetalhadoService.js";
+import { parsearPainelMaquinas } from "../services/machinePayPainelParser.js";
 
 const atributosMaquina = [
   "id",
@@ -221,5 +223,51 @@ export const descobrirUsrPorPosId = async (req, res) => {
   } catch (error) {
     console.error("[MachinePay] Erro ao descobrir usr:", error);
     res.status(502).json({ error: error.message });
+  }
+};
+
+// GET /api/machine-pay/leitores/:usrId — leitores da conta no painel, para
+// escolher o POS ID de uma máquina a partir do Usr ID já cadastrado.
+export const listarLeitoresDaConta = async (req, res) => {
+  try {
+    const usrId = String(req.params.usrId || "").trim();
+    if (!/^\d+$/.test(usrId)) {
+      return res.status(400).json({ error: "Usr ID inválido" });
+    }
+
+    const html = await listarMaquinasCadastradas({ usrId });
+    // Só leitores dessa conta (o painel pode devolver os da conta logada)
+    const leitores = parsearPainelMaquinas(html).filter(
+      (l) => String(l.usrId || "") === usrId,
+    );
+
+    const usados = await Maquina.findAll({
+      where: { machinePayPosId: { [Op.in]: leitores.map((l) => l.posId) } },
+      attributes: ["id", "codigo", "nome", "machinePayPosId"],
+      raw: true,
+    });
+    const maquinaPorPosId = new Map(usados.map((m) => [String(m.machinePayPosId), m]));
+
+    res.json(
+      leitores
+        .map((l) => {
+          const maquina = maquinaPorPosId.get(l.posId);
+          return {
+            posId: l.posId,
+            nomePonto: l.nomePonto,
+            cliente: l.cliente,
+            online: l.online,
+            maquinaVinculada: maquina
+              ? { id: maquina.id, codigo: maquina.codigo, nome: maquina.nome }
+              : null,
+          };
+        })
+        .sort((a, b) =>
+          String(a.nomePonto || "").localeCompare(String(b.nomePonto || ""), "pt-BR"),
+        ),
+    );
+  } catch (error) {
+    console.error("[MachinePay] Erro ao listar leitores da conta:", error);
+    res.status(error.status || 502).json({ error: error.message });
   }
 };

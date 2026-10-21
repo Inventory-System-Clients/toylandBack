@@ -77,10 +77,23 @@ export async function usrsCadastrados() {
   ];
 }
 
-// Filtro de machine_pay_status: só leitores das contas cadastradas. Linhas
-// antigas de outras contas continuam no banco, mas nunca aparecem nem são usadas.
-export async function whereContasCadastradas() {
-  return { usrId: { [Op.in]: await usrsCadastrados() } };
+// POS IDs das máquinas cadastradas no sistema. Como no Agarramais, só esses
+// leitores entram: as contas lidas podem ter leitores de outros clientes.
+export async function posIdsCadastrados() {
+  const maquinas = await Maquina.findAll({
+    where: { machinePayPosId: { [Op.ne]: null } },
+    attributes: ["machinePayPosId"],
+    raw: true,
+  });
+  return [
+    ...new Set(maquinas.map((m) => String(m.machinePayPosId).trim()).filter(Boolean)),
+  ];
+}
+
+// Filtro de machine_pay_status: só leitores com POS ID cadastrado. Linhas antigas
+// de outros leitores continuam no banco, mas nunca aparecem nem são usadas.
+export async function whereMaquinasCadastradas() {
+  return { posId: { [Op.in]: await posIdsCadastrados() } };
 }
 
 async function resolverContasMonitoradas() {
@@ -137,7 +150,7 @@ async function executarColeta() {
       "Nenhuma máquina do sistema tem o Usr ID da Machine Pay. Preencha o Usr ID em pelo menos uma máquina.",
     );
   }
-  const contasMonitoradas = new Set(usrs);
+  const posIdsDoSistema = new Set(await posIdsCadastrados());
 
   const leituras = [];
   const vistos = new Set();
@@ -147,9 +160,8 @@ async function executarColeta() {
     for (const leitura of parsearPainelMaquinas(html)) {
       if (vistos.has(leitura.posId)) continue;
       vistos.add(leitura.posId);
-      // Garantia: leitor de uma conta que não está no cadastro nunca entra
-      // (o painel pode ignorar o usr pedido e devolver os leitores da conta logada)
-      if (!contasMonitoradas.has(String(leitura.usrId || ""))) continue;
+      // Só leitores de máquinas do sistema (a conta pode ter de outros clientes)
+      if (!posIdsDoSistema.has(leitura.posId)) continue;
       if (ehCaixaLivre(leitura.nomePonto)) {
         caixasLivres.add(leitura.posId);
         continue;
@@ -161,7 +173,7 @@ async function executarColeta() {
   if (!leituras.length) {
     throw new MachinePayServiceError(
       502,
-      "Nenhuma máquina encontrada no painel Machine Pay para os Usr IDs cadastrados (confira o Usr ID das máquinas, ou o layout mudou / a sessão expirou)",
+      "Nenhuma máquina cadastrada foi encontrada no painel Machine Pay (confira o POS ID e o Usr ID das máquinas, ou o layout mudou / a sessão expirou)",
     );
   }
 
