@@ -18,14 +18,11 @@ export class MachinePayServiceError extends Error {
 const base64 = (value) =>
   Buffer.from(String(value ?? ""), "utf8").toString("base64");
 
+// Mesmo padrão do machinePayService.js: MACHINE_PAY_LOGIN_URL é opcional.
+export const URL_PADRAO_MACHINE_PAY = "https://www.cyberpix.com.br/pix-adesivo-clientes/";
+
 const baseUrl = () => {
-  const url = process.env.MACHINE_PAY_LOGIN_URL;
-  if (!url) {
-    throw new MachinePayServiceError(
-      500,
-      "MACHINE_PAY_LOGIN_URL não configurada",
-    );
-  }
+  const url = process.env.MACHINE_PAY_LOGIN_URL || URL_PADRAO_MACHINE_PAY;
   return url.endsWith("/") ? url : `${url}/`;
 };
 

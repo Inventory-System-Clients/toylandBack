@@ -13,7 +13,6 @@ import {
   MachinePayConta,
 } from "../models/index.js";
 import {
-  descobrirUsrPorExtrato,
   listarMaquinasCadastradas,
   MachinePayServiceError,
 } from "./machinePayDetalhadoService.js";
@@ -57,23 +56,13 @@ const usrsDoEnv = () =>
 
 export const monitorConfigurado = () =>
   Boolean(
-    process.env.MACHINE_PAY_LOGIN_URL &&
-      process.env.MACHINE_PAY_LOGIN &&
-      process.env.MACHINE_PAY_PASSWORD,
+    process.env.MACHINE_PAY_LOGIN && process.env.MACHINE_PAY_PASSWORD,
   );
 
-// Máximo de extratos consultados por coleta para descobrir o dono de um posId
-// (cada consulta baixa uma página do painel).
-const MAX_DESCOBERTAS_POR_COLETA = 5;
-// posIds cujo extrato não revelou o dono (caixa sem pagamento no período):
-// não repetimos a consulta a cada coleta. Zera quando o servidor reinicia.
-const posIdsSemDono = new Set();
-
-// Contas (usr) monitoradas = todas as salvas em machine_pay_contas + as das
-// máquinas cadastradas (machinePayUsrId) + MACHINE_PAY_USR (opcional). Uma
-// máquina sem usr que ainda não apareceu em nenhuma conta lida tem a conta
-// descoberta pelo extrato do posId; toda conta nova é salva e passa a ser lida
-// sempre, sem precisar ser descoberta de novo.
+// Contas (usr) monitoradas = o usr de cada máquina cadastrada (machinePayUsrId)
+// + as já salvas em machine_pay_contas + MACHINE_PAY_USR (opcional). O usr da
+// máquina é buscado pelo cadastro só quando ela é criada ou o POS ID muda, então
+// a coleta não pesquisa nada no painel para descobrir contas.
 async function resolverContasMonitoradas() {
   const [maquinas, contasSalvas] = await Promise.all([
     Maquina.findAll({
@@ -87,30 +76,6 @@ async function resolverContasMonitoradas() {
     ...usrsDoEnv(),
     ...maquinas.map((m) => m.machinePayUsrId).filter(Boolean),
   ]);
-
-  // Dono já conhecido pela última coleta (machine_pay_status guarda o usr).
-  const semUsr = maquinas.filter((m) => !m.machinePayUsrId);
-  if (semUsr.length) {
-    const conhecidos = await MachinePayStatus.findAll({
-      where: { posId: semUsr.map((m) => String(m.machinePayPosId).trim()) },
-      attributes: ["posId", "usrId"],
-      raw: true,
-    });
-    const usrPorPosId = new Map(conhecidos.map((s) => [s.posId, s.usrId]));
-    let descobertas = 0;
-
-    for (const maquina of semUsr) {
-      const posId = String(maquina.machinePayPosId).trim();
-      let usrId = usrPorPosId.get(posId);
-      if (!usrId && !posIdsSemDono.has(posId) && descobertas < MAX_DESCOBERTAS_POR_COLETA) {
-        descobertas += 1;
-        usrId = await descobrirUsrPorExtrato(posId).catch(() => null);
-        if (!usrId) posIdsSemDono.add(posId);
-      }
-      // Só guarda a conta (machine_pay_contas): a tabela de máquinas não é alterada.
-      if (usrId) usrs.add(usrId);
-    }
-  }
 
   const salvas = new Set(contasSalvas.map((c) => c.usrId));
   const novas = [...usrs].filter((usrId) => !salvas.has(usrId));
@@ -154,7 +119,7 @@ async function executarColeta() {
   if (!monitorConfigurado()) {
     throw new MachinePayServiceError(
       500,
-      "Monitoramento Machine Pay não configurado (MACHINE_PAY_LOGIN_URL / MACHINE_PAY_LOGIN / MACHINE_PAY_PASSWORD)",
+      "Monitoramento Machine Pay não configurado (MACHINE_PAY_LOGIN / MACHINE_PAY_PASSWORD)",
     );
   }
 
@@ -163,7 +128,7 @@ async function executarColeta() {
     throw new MachinePayServiceError(
       400,
       totalCadastradas
-        ? "Não foi possível descobrir a conta Machine Pay das máquinas cadastradas (nenhum caixa com pagamento no último mês). Preencha o usr em uma máquina ou MACHINE_PAY_USR."
+        ? "As máquinas com POS ID ainda não têm o usr da Machine Pay. Abra a máquina no cadastro e salve o POS ID de novo para buscar o usr."
         : "Nenhuma máquina do sistema tem o POS ID da Machine Pay cadastrado. Preencha o POS ID em pelo menos uma máquina.",
     );
   }
