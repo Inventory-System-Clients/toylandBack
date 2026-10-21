@@ -48,12 +48,22 @@ export function parsearLinhaMaquina(linhaHtml) {
   if (!posId) return null;
 
   const menu = linhaHtml.match(/mnu_op_maq\((\d+)\s*,\s*(\d+)\)/);
-  const online = /fa-bolt maq_on/.test(linhaHtml);
+  const telemetria =
+    casar(
+      linhaHtml,
+      /alt="(Consultado|Sem resposta|Devolvido|Aguardando|Expirado)"/i,
+    ) || null;
 
-  // Badge ao lado do raio ON/OFF: "3x" = caiu 3 vezes hoje; "ok" = nenhuma queda.
+  // Indicador ON/OFF: leitores WEBSOCKET/MQTT usam o raio (fa-bolt), leitores
+  // Relé/POST usam outro ícone (wifi) com a mesma classe maq_on/maq_off. Sem
+  // indicador, vale a última consulta de telemetria do painel.
+  const indicador = casar(linhaHtml, /class="fa fa-[\w-]+ maq_(on|off)\b/);
+  const online = indicador ? indicador === "on" : telemetria === "Consultado";
+
+  // Badge ao lado do indicador ON/OFF: "3x" = caiu 3 vezes hoje; "ok" = nenhuma queda.
   const quedasTexto = casar(
     linhaHtml,
-    /fa-bolt maq_\w+[^>]*><\/i>\s*<span[^>]*>\s*(\d+)x\s*</,
+    /fa-[\w-]+ maq_\w+[^>]*><\/i>\s*<span[^>]*>\s*(\d+)x\s*</,
   );
 
   // Nome do ponto: texto entre o início da célula do caixa (<td onclick="stats(...)">,
@@ -78,12 +88,7 @@ export function parsearLinhaMaquina(linhaHtml) {
   let modoResposta = "SEM_RESPOSTA";
   if (/MQTT Instant[âa]neo/i.test(texto)) modoResposta = "MQTT_INSTANTANEO";
   else if (/MQTT Confirmado/i.test(texto)) modoResposta = "MQTT_CONFIRMADO";
-
-  const telemetria =
-    casar(
-      linhaHtml,
-      /alt="(Consultado|Sem resposta|Devolvido|Aguardando|Expirado)"/i,
-    ) || null;
+  else if (/\bPOST\s+\d+\s*segundo/i.test(texto)) modoResposta = "POST";
 
   return {
     posId,
@@ -94,7 +99,7 @@ export function parsearLinhaMaquina(linhaHtml) {
     nomePonto,
     cliente: casar(linhaHtml, /cliente-empresa\.png[^>]*>\s*([^<]+?)\s*</),
     versao: casar(texto, /V\.\s*([\d.]+)/),
-    tipoVersao: casar(texto, /Versão\s+(WEBSOCKET|MQTT [A-Za-zÀ-ú]+)/),
+    tipoVersao: casar(texto, /Versão\s+(WEBSOCKET|MQTT [A-Za-zÀ-ú]+|Rel[ée])/),
     diasVencer: (() => {
       const valor = casar(texto, /(-?\d+)\s*à vencer/);
       return valor === null ? null : parseInt(valor, 10);
