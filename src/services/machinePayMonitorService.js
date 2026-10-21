@@ -53,21 +53,19 @@ export const monitorConfigurado = () =>
     process.env.MACHINE_PAY_LOGIN && process.env.MACHINE_PAY_PASSWORD,
   );
 
-// Contas (usr) monitoradas = só o usr das máquinas cadastradas (machinePayUsrId).
-// MACHINE_PAY_USR do .env e contas antigas de machine_pay_contas ficam de fora: o
-// login do painel enxerga contas de outros clientes, e só as máquinas do sistema
-// devem ser monitoradas. O usr da máquina é buscado pelo cadastro só quando ela é
-// criada ou o POS ID muda, então a coleta não pesquisa nada no painel.
+// Contas (usr) monitoradas = só o Usr ID preenchido nas máquinas cadastradas
+// (com ou sem POS ID). MACHINE_PAY_USR do .env e contas antigas de
+// machine_pay_contas ficam de fora: o login do painel enxerga contas de outros
+// clientes, e só as contas do sistema devem ser lidas.
 async function resolverContasMonitoradas() {
   const maquinas = await Maquina.findAll({
-    where: { machinePayPosId: { [Op.ne]: null } },
-    attributes: ["id", "machinePayPosId", "machinePayUsrId"],
+    where: { machinePayUsrId: { [Op.ne]: null } },
+    attributes: ["machinePayUsrId"],
     raw: true,
   });
-  const usrs = [...new Set(maquinas.map((m) => m.machinePayUsrId).filter(Boolean))];
-  const posIdsCadastrados = new Set(
-    maquinas.map((m) => String(m.machinePayPosId).trim()).filter(Boolean),
-  );
+  const usrs = [
+    ...new Set(maquinas.map((m) => String(m.machinePayUsrId).trim()).filter(Boolean)),
+  ];
 
   if (usrs.length) {
     await MachinePayConta.bulkCreate(
@@ -76,7 +74,7 @@ async function resolverContasMonitoradas() {
     );
   }
 
-  return { usrs, posIdsCadastrados, totalCadastradas: maquinas.length };
+  return usrs;
 }
 
 let coletaEmAndamento = null;
@@ -113,15 +111,14 @@ async function executarColeta() {
     );
   }
 
-  const { usrs, posIdsCadastrados, totalCadastradas } = await resolverContasMonitoradas();
+  const usrs = await resolverContasMonitoradas();
   if (!usrs.length) {
     throw new MachinePayServiceError(
       400,
-      totalCadastradas
-        ? "As máquinas com POS ID ainda não têm o usr da Machine Pay. Abra a máquina no cadastro e salve o POS ID de novo para buscar o usr."
-        : "Nenhuma máquina do sistema tem o POS ID da Machine Pay cadastrado. Preencha o POS ID em pelo menos uma máquina.",
+      "Nenhuma máquina do sistema tem o Usr ID da Machine Pay. Preencha o Usr ID em pelo menos uma máquina.",
     );
   }
+  const contasMonitoradas = new Set(usrs);
 
   const leituras = [];
   const vistos = new Set();
@@ -131,8 +128,8 @@ async function executarColeta() {
     for (const leitura of parsearPainelMaquinas(html)) {
       if (vistos.has(leitura.posId)) continue;
       vistos.add(leitura.posId);
-      // A conta pode ter leitores que não são do sistema: só os cadastrados entram
-      if (!posIdsCadastrados.has(leitura.posId)) continue;
+      // Garantia: leitor de uma conta que não está no cadastro nunca entra
+      if (leitura.usrId && !contasMonitoradas.has(String(leitura.usrId))) continue;
       if (ehCaixaLivre(leitura.nomePonto)) {
         caixasLivres.add(leitura.posId);
         continue;
@@ -144,7 +141,7 @@ async function executarColeta() {
   if (!leituras.length) {
     throw new MachinePayServiceError(
       502,
-      "Nenhuma máquina cadastrada foi encontrada no painel Machine Pay (confira o POS ID das máquinas, ou o layout mudou / a sessão expirou)",
+      "Nenhuma máquina encontrada no painel Machine Pay para os Usr IDs cadastrados (confira o Usr ID das máquinas, ou o layout mudou / a sessão expirou)",
     );
   }
 
