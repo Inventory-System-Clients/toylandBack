@@ -48,45 +48,35 @@ const piorSinal = (atual, novo) => {
   return GRAVIDADE_SINAL[novo] > GRAVIDADE_SINAL[atual] ? novo : atual;
 };
 
-const usrsDoEnv = () =>
-  String(process.env.MACHINE_PAY_USR || "")
-    .split(",")
-    .map((valor) => valor.trim())
-    .filter(Boolean);
-
 export const monitorConfigurado = () =>
   Boolean(
     process.env.MACHINE_PAY_LOGIN && process.env.MACHINE_PAY_PASSWORD,
   );
 
-// Contas (usr) monitoradas = o usr de cada máquina cadastrada (machinePayUsrId)
-// + as já salvas em machine_pay_contas + MACHINE_PAY_USR (opcional). O usr da
-// máquina é buscado pelo cadastro só quando ela é criada ou o POS ID muda, então
-// a coleta não pesquisa nada no painel para descobrir contas.
+// Contas (usr) monitoradas = só o usr das máquinas cadastradas (machinePayUsrId).
+// MACHINE_PAY_USR do .env e contas antigas de machine_pay_contas ficam de fora: o
+// login do painel enxerga contas de outros clientes, e só as máquinas do sistema
+// devem ser monitoradas. O usr da máquina é buscado pelo cadastro só quando ela é
+// criada ou o POS ID muda, então a coleta não pesquisa nada no painel.
 async function resolverContasMonitoradas() {
-  const [maquinas, contasSalvas] = await Promise.all([
-    Maquina.findAll({
-      where: { machinePayPosId: { [Op.ne]: null } },
-      attributes: ["id", "machinePayPosId", "machinePayUsrId"],
-    }),
-    MachinePayConta.findAll({ attributes: ["usrId"], raw: true }),
-  ]);
-  const usrs = new Set([
-    ...contasSalvas.map((c) => c.usrId),
-    ...usrsDoEnv(),
-    ...maquinas.map((m) => m.machinePayUsrId).filter(Boolean),
-  ]);
+  const maquinas = await Maquina.findAll({
+    where: { machinePayPosId: { [Op.ne]: null } },
+    attributes: ["id", "machinePayPosId", "machinePayUsrId"],
+    raw: true,
+  });
+  const usrs = [...new Set(maquinas.map((m) => m.machinePayUsrId).filter(Boolean))];
+  const posIdsCadastrados = new Set(
+    maquinas.map((m) => String(m.machinePayPosId).trim()).filter(Boolean),
+  );
 
-  const salvas = new Set(contasSalvas.map((c) => c.usrId));
-  const novas = [...usrs].filter((usrId) => !salvas.has(usrId));
-  if (novas.length) {
+  if (usrs.length) {
     await MachinePayConta.bulkCreate(
-      novas.map((usrId) => ({ usrId })),
+      usrs.map((usrId) => ({ usrId })),
       { ignoreDuplicates: true },
     );
   }
 
-  return { usrs: [...usrs], totalCadastradas: maquinas.length };
+  return { usrs, posIdsCadastrados, totalCadastradas: maquinas.length };
 }
 
 let coletaEmAndamento = null;
@@ -123,7 +113,7 @@ async function executarColeta() {
     );
   }
 
-  const { usrs, totalCadastradas } = await resolverContasMonitoradas();
+  const { usrs, posIdsCadastrados, totalCadastradas } = await resolverContasMonitoradas();
   if (!usrs.length) {
     throw new MachinePayServiceError(
       400,
@@ -141,6 +131,8 @@ async function executarColeta() {
     for (const leitura of parsearPainelMaquinas(html)) {
       if (vistos.has(leitura.posId)) continue;
       vistos.add(leitura.posId);
+      // A conta pode ter leitores que não são do sistema: só os cadastrados entram
+      if (!posIdsCadastrados.has(leitura.posId)) continue;
       if (ehCaixaLivre(leitura.nomePonto)) {
         caixasLivres.add(leitura.posId);
         continue;
@@ -152,7 +144,7 @@ async function executarColeta() {
   if (!leituras.length) {
     throw new MachinePayServiceError(
       502,
-      "Nenhuma máquina encontrada no painel Machine Pay (layout alterado ou sessão expirada)",
+      "Nenhuma máquina cadastrada foi encontrada no painel Machine Pay (confira o POS ID das máquinas, ou o layout mudou / a sessão expirou)",
     );
   }
 

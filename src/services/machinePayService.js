@@ -1,4 +1,5 @@
 import WebSocketClient from "ws";
+import { descobrirUsrPorExtrato } from "./machinePayDetalhadoService.js";
 
 const DEFAULT_LOGIN_URL =
   "https://www.cyberpix.com.br/pix-adesivo-clientes/";
@@ -495,25 +496,6 @@ export const fecharFechamentoMachinePay = async ({
   };
 };
 
-let _adminUsrCache = null;
-
-const descobrirAdminUsr = async () => {
-  if (_adminUsrCache) return _adminUsrCache;
-  const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
-  try {
-    const { body } = await fetchMachinePay(
-      `${loginUrl}maquinas.php?acao=maquinas`,
-      { headers: { "X-Requested-With": "XMLHttpRequest" } },
-    );
-    const match = body.match(/copiarDadosMaquina\((\d{10,20})/);
-    if (match) {
-      _adminUsrCache = match[1];
-      return _adminUsrCache;
-    }
-  } catch {}
-  return null;
-};
-
 const buscarStatusViaFiltro = async ({ usrId, posId }) => {
   const loginUrl = process.env.MACHINE_PAY_LOGIN_URL || DEFAULT_LOGIN_URL;
   const chave = Buffer.from(String(posId), "utf8").toString("base64");
@@ -529,29 +511,18 @@ const buscarStatusViaFiltro = async ({ usrId, posId }) => {
   return { online: online && !offline, status: offline ? "offline" : online ? "online" : "desconhecido" };
 };
 
+// O usr vem só do extrato do próprio caixa (o cliente dono dele). Sem fallback
+// para MACHINE_PAY_USR nem para o usr da conta logada: essas contas não são
+// da Toyland e nada delas deve ser lido.
 export const descobrirUsrDePosId = async ({ posId }) => {
-  const usrIds = (process.env.MACHINE_PAY_USR || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const usrId = await descobrirUsrPorExtrato(posId);
+  if (!usrId) return null;
 
-  for (const usrId of usrIds) {
-    const resultado = await buscarStatusViaFiltro({ usrId, posId });
-    if (resultado) return { usrId, ...resultado };
-  }
-
-  const adminUsr = await descobrirAdminUsr();
-  if (adminUsr) {
-    const resultado = await buscarStatusViaFiltro({ usrId: adminUsr, posId });
-    if (resultado) return { usrId: adminUsr, ...resultado };
-  }
-
-  return null;
+  const resultado = await buscarStatusViaFiltro({ usrId, posId });
+  return { usrId, ...(resultado || { online: false, status: "desconhecido" }) };
 };
 
-export const consultarStatusMachinePay = async ({ posId, usrId: usrIdParam }) => {
-  const envUsrId = (process.env.MACHINE_PAY_USR || "").split(",")[0].trim();
-  const usrId = usrIdParam || envUsrId || (await descobrirAdminUsr());
+export const consultarStatusMachinePay = async ({ posId, usrId }) => {
 
   if (!usrId) {
     return {

@@ -214,7 +214,7 @@ export const descobrirUsrPorPosId = async (req, res) => {
     const resultado = await descobrirUsrDePosId({ posId });
     if (!resultado) {
       return res.status(404).json({
-        error: "Nao foi possivel encontrar o usr para esse posId. Verifique MACHINE_PAY_USR no .env.",
+        error: "Nao foi possivel encontrar o usr para esse posId. O caixa precisa ter pelo menos um pagamento no extrato.",
       });
     }
     res.json(resultado);

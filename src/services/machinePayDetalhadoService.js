@@ -456,23 +456,6 @@ export async function listarMaquinasCadastradas({ usrId } = {}) {
   return resposta.text();
 }
 
-// Descoberta best-effort do usrId dono de um posId — só relevante para a feature
-// secundária de status online/offline; nunca deve travar a busca de faturamento.
-async function descobrirAdminUsr(posId) {
-  try {
-    const html = await listarMaquinasCadastradas();
-    const regex = new RegExp(
-      `copiarDadosMaquina\\(['"]?${posId}['"]?\\s*,\\s*['"]?(\\w+)['"]?`,
-      "i",
-    );
-    const match = html.match(regex);
-    return match ? match[1] : null;
-  } catch (error) {
-    console.error("[MachinePay] Falha ao descobrir admin usr:", error.message);
-    return null;
-  }
-}
-
 // O extrato de um caixa (acao=stats&posid=) lista os pagamentos com
 // mostrar_mp('<idPagamento>', <usrDoCliente>) — dá o dono do posId sem saber
 // o usr de antemão. Só funciona se o caixa teve pagamento no período padrão.
@@ -498,21 +481,9 @@ export async function descobrirUsrDePosId(posId) {
     console.error("[MachinePay] Falha ao descobrir usr pelo extrato:", error.message);
   }
 
-  const candidatos = String(process.env.MACHINE_PAY_USR || "")
-    .split(",")
-    .map((valor) => valor.trim())
-    .filter(Boolean);
-
-  for (const usrId of candidatos) {
-    try {
-      await consultarStatusMaquina({ posId, usrId });
-      return usrId;
-    } catch {
-      continue;
-    }
-  }
-
-  return descobrirAdminUsr(posId);
+  // Sem fallback para MACHINE_PAY_USR nem para a lista da conta logada: essas
+  // contas não são da Toyland e nada delas deve ser lido.
+  return null;
 }
 
 // ---- acao=devolver: solicita estorno de uma transação ----
