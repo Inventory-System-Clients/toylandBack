@@ -57,15 +57,25 @@ export const monitorConfigurado = () =>
 // (com ou sem POS ID). MACHINE_PAY_USR do .env e contas antigas de
 // machine_pay_contas ficam de fora: o login do painel enxerga contas de outros
 // clientes, e só as contas do sistema devem ser lidas.
-async function resolverContasMonitoradas() {
+export async function usrsCadastrados() {
   const maquinas = await Maquina.findAll({
     where: { machinePayUsrId: { [Op.ne]: null } },
     attributes: ["machinePayUsrId"],
     raw: true,
   });
-  const usrs = [
+  return [
     ...new Set(maquinas.map((m) => String(m.machinePayUsrId).trim()).filter(Boolean)),
   ];
+}
+
+// Filtro de machine_pay_status: só leitores das contas cadastradas. Linhas
+// antigas de outras contas continuam no banco, mas nunca aparecem nem são usadas.
+export async function whereContasCadastradas() {
+  return { usrId: { [Op.in]: await usrsCadastrados() } };
+}
+
+async function resolverContasMonitoradas() {
+  const usrs = await usrsCadastrados();
 
   if (usrs.length) {
     await MachinePayConta.bulkCreate(
@@ -129,7 +139,8 @@ async function executarColeta() {
       if (vistos.has(leitura.posId)) continue;
       vistos.add(leitura.posId);
       // Garantia: leitor de uma conta que não está no cadastro nunca entra
-      if (leitura.usrId && !contasMonitoradas.has(String(leitura.usrId))) continue;
+      // (o painel pode ignorar o usr pedido e devolver os leitores da conta logada)
+      if (!contasMonitoradas.has(String(leitura.usrId || ""))) continue;
       if (ehCaixaLivre(leitura.nomePonto)) {
         caixasLivres.add(leitura.posId);
         continue;

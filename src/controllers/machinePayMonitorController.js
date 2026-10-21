@@ -13,6 +13,7 @@ import {
   ehCaixaLivre,
   monitorConfigurado,
   obterUltimoErroColeta,
+  whereContasCadastradas,
 } from "../services/machinePayMonitorService.js";
 import {
   MachinePayServiceError,
@@ -150,7 +151,7 @@ const formatarStatus = (s, vinculos, pontos, agora, hoje) => {
 
 export async function carregarStatusFormatados() {
   const [status, vinculos, configPontos] = await Promise.all([
-    MachinePayStatus.findAll({ raw: true }),
+    MachinePayStatus.findAll({ where: await whereContasCadastradas(), raw: true }),
     mapaVinculos(),
     MachinePayHorario.findAll({ raw: true }),
   ]);
@@ -349,14 +350,11 @@ export const listarMaquinasMonitor = async (req, res) => {
 
 const somaCondicional = (condicao) => fn("SUM", literal(`CASE WHEN ${condicao} THEN 1 ELSE 0 END`));
 
-// Restringe consultas históricas às máquinas que passam pelos filtros. Inclui posIds
-// que já saíram do painel quando não há filtro de máquina (para não sumir histórico).
+// Restringe consultas históricas às máquinas que passam pelos filtros (sempre
+// dentro das contas cadastradas).
 async function posIdsFiltrados(query) {
-  const temFiltro = ["busca", "lojaId", "sinal", "tipoVersao", "posId", "vinculo"].some(
-    (campo) => query[campo],
-  );
   const lista = filtrarMaquinas(await carregarStatusFormatados(), query);
-  return { lista, temFiltro, posIds: lista.map((m) => m.posId) };
+  return { lista, posIds: lista.map((m) => m.posId) };
 }
 
 // GET /api/machine-pay/monitor/ranking-quedas?dataInicio=&dataFim=&busca=&lojaId=
@@ -436,12 +434,11 @@ export const rankingQuedas = async (req, res) => {
 export const serieDiaria = async (req, res) => {
   try {
     const { inicio, fim } = lerPeriodo(req.query, 30);
-    const { temFiltro, posIds } = await posIdsFiltrados(req.query);
+    const { posIds } = await posIdsFiltrados(req.query);
 
     const where = { data: { [Op.between]: [inicio, fim] } };
-    if (temFiltro || req.query.incluirDesativadas !== "true") {
-      where.posId = { [Op.in]: posIds };
-    }
+    // Sempre limitado aos leitores das contas cadastradas, mesmo com "incluir desativadas"
+    where.posId = { [Op.in]: posIds };
 
     const linhas = await MachinePayDiario.findAll({
       where,
@@ -495,6 +492,10 @@ export const detalharMaquinaMonitor = async (req, res) => {
     const { inicio, fim } = lerPeriodo(req.query, 30);
     const todas = await carregarStatusFormatados();
     const maquina = todas.find((m) => m.posId === posId) || null;
+    // Leitor fora das contas cadastradas: nem o histórico dele é mostrado
+    if (!maquina) {
+      return res.status(404).json({ error: "Leitor Machine Pay não encontrado" });
+    }
 
     const [dias, eventos] = await Promise.all([
       MachinePayDiario.findAll({
@@ -554,13 +555,12 @@ export const listarEventos = async (req, res) => {
     const tipos = listaParam(req.query.tipo).filter((t) =>
       ["QUEDA", "OFFLINE", "ONLINE"].includes(t),
     );
-    const { temFiltro, posIds } = await posIdsFiltrados(req.query);
+    const { posIds } = await posIdsFiltrados(req.query);
 
     const where = { data: { [Op.between]: [inicio, fim] } };
     if (tipos.length) where.tipo = { [Op.in]: tipos };
-    if (temFiltro || req.query.incluirDesativadas !== "true") {
-      where.posId = { [Op.in]: posIds };
-    }
+    // Sempre limitado aos leitores das contas cadastradas, mesmo com "incluir desativadas"
+    where.posId = { [Op.in]: posIds };
 
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 500);
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -605,7 +605,10 @@ const CREDITO_MAXIMO_REAIS = Number(process.env.MACHINE_PAY_CREDITO_MAXIMO || 50
 
 // Só age sobre leitores que o monitor conhece (evita posId arbitrário)
 const leitorConhecido = async (posId) =>
-  MachinePayStatus.findOne({ where: { posId: String(posId) }, attributes: ["posId", "nomePonto"] });
+  MachinePayStatus.findOne({
+    where: { posId: String(posId), ...(await whereContasCadastradas()) },
+    attributes: ["posId", "nomePonto"],
+  });
 
 // Log de atividade guarda UUID: usa a máquina do sistema vinculada ao leitor (o posId vai nos detalhes)
 const idMaquinaVinculada = async (posId) =>

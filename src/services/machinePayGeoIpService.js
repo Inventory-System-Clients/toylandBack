@@ -9,6 +9,7 @@
 // - Desligue com MACHINE_PAY_GEOIP_ATIVO=false.
 import { Op } from "sequelize";
 import { MachinePayLocalizacao, MachinePayStatus } from "../models/index.js";
+import { whereContasCadastradas } from "./machinePayMonitorService.js";
 
 const MAX_IPS_POR_RODADA = 200; // o resto fica para a próxima coleta
 const CONSULTAS_SIMULTANEAS = 5;
@@ -103,7 +104,11 @@ const cortar = (texto, tamanho) => (texto ? String(texto).slice(0, tamanho) : nu
 
 async function executarRodada() {
   const [status, salvas] = await Promise.all([
-    MachinePayStatus.findAll({ attributes: ["posId", "ip"], raw: true }),
+    MachinePayStatus.findAll({
+      where: await whereContasCadastradas(),
+      attributes: ["posId", "ip"],
+      raw: true,
+    }),
     MachinePayLocalizacao.findAll({ raw: true }),
   ]);
   const porPosId = new Map(salvas.map((l) => [l.posId, l]));

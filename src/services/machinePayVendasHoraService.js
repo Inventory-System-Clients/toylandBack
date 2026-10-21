@@ -6,7 +6,12 @@
 import { Op } from "sequelize";
 import { MachinePayStatus, MachinePayVendaHora } from "../models/index.js";
 import { abrirSessaoMachinePay, listarVendasMachinePay } from "./machinePayDetalhadoService.js";
-import { dataBrasil, ehCaixaLivre, monitorConfigurado } from "./machinePayMonitorService.js";
+import {
+  dataBrasil,
+  ehCaixaLivre,
+  monitorConfigurado,
+  whereContasCadastradas,
+} from "./machinePayMonitorService.js";
 import { blocosDeDias, listarDatas, resumirVendasPorHora, somarDias } from "../utils/machinePayAnalise.js";
 
 // Quantos dias para trás guardamos (o maior período da página é 90 dias)
@@ -29,7 +34,11 @@ export const estadoSincronizacaoVendasHora = () => ({
 async function diasPendentes(ontem) {
   const inicio = somarDias(ontem, -(DIAS_HISTORICO_HORA - 1));
   const [leitores, lidos] = await Promise.all([
-    MachinePayStatus.findAll({ attributes: ["posId", "nomePonto"], raw: true }),
+    MachinePayStatus.findAll({
+      where: await whereContasCadastradas(),
+      attributes: ["posId", "nomePonto"],
+      raw: true,
+    }),
     MachinePayVendaHora.findAll({
       where: { data: { [Op.between]: [inicio, ontem] } },
       attributes: ["posId", "data"],
