@@ -53,16 +53,9 @@ export const monitorConfigurado = () =>
     process.env.MACHINE_PAY_LOGIN && process.env.MACHINE_PAY_PASSWORD,
   );
 
-const usrsDoEnv = () =>
-  String(process.env.MACHINE_PAY_USR || "")
-    .split(",")
-    .map((valor) => valor.trim())
-    .filter(Boolean);
-
-// Contas (usr) monitoradas = MACHINE_PAY_USR (a conta do cliente no painel, como
-// no Club Kids) + o Usr ID preenchido nas máquinas cadastradas. O login do painel
-// é de revenda e enxerga outros clientes, por isso contas antigas de
-// machine_pay_contas ficam de fora: só essas contas são lidas.
+// Contas (usr) monitoradas = o Usr ID de cada máquina cadastrada (pode haver
+// mais de uma conta). O login do painel é de revenda e enxerga outros clientes,
+// por isso MACHINE_PAY_USR e contas antigas de machine_pay_contas não entram.
 export async function usrsCadastrados() {
   const maquinas = await Maquina.findAll({
     where: { machinePayUsrId: { [Op.ne]: null } },
@@ -70,10 +63,7 @@ export async function usrsCadastrados() {
     raw: true,
   });
   return [
-    ...new Set([
-      ...usrsDoEnv(),
-      ...maquinas.map((m) => String(m.machinePayUsrId).trim()).filter(Boolean),
-    ]),
+    ...new Set(maquinas.map((m) => String(m.machinePayUsrId).trim()).filter(Boolean)),
   ];
 }
 
