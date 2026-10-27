@@ -482,7 +482,11 @@ export async function descobrirUsrPorExtrato(posId) {
   if (!resposta.ok) return null;
   const match = (await resposta.text()).match(/mostrar_mp\('[^']*'\s*,\s*(\d+)\s*\)/);
   if (!match || (await ehUsrDaContaLogada(match[1]))) return null;
-  return match[1];
+  // O usr do extrato às vezes é o da processadora (ex.: Cyberpix), não o do
+  // cliente: só vale se o caixa aparece mesmo na listagem dessa conta.
+  const listagem = await listarMaquinasCadastradas({ usrId: match[1] });
+  const caixa = new RegExp(`Caixa:\\s*${posId}\\b`);
+  return caixa.test(listagem) ? match[1] : null;
 }
 
 export async function descobrirUsrDePosId(posId) {
