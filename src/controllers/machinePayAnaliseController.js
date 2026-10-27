@@ -131,8 +131,9 @@ async function peluciasPorMaquina(maquinaIds, inicio, fim) {
         [Op.between]: [new Date(`${inicio}T00:00:00-03:00`), new Date(`${fim}T23:59:59.999-03:00`)],
       },
     },
-    attributes: [[col("maquina_id"), "maquinaId"], [fn("SUM", col("sairam")), "pelucias"]],
-    group: [col("maquina_id")],
+    // Nome do atributo (não da coluna): no Toyland a coluna é "maquinaId", sem sublinhado
+    attributes: ["maquinaId", [fn("SUM", col("sairam")), "pelucias"]],
+    group: ["maquinaId"],
     raw: true,
   });
   return new Map(linhas.map((l) => [l.maquinaId, Number(l.pelucias) || 0]));
