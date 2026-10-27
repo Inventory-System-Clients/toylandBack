@@ -144,6 +144,14 @@ const startServer = async () => {
     `).catch(() => {});
     console.log("✅ Coluna machine_pay_usr_id verificada!");
 
+    // Migration: máquina da manutenção (idempotente)
+    await sequelize.query(`
+      ALTER TABLE manutencoes
+      ADD COLUMN IF NOT EXISTS "maquinaId" UUID DEFAULT NULL
+      REFERENCES maquinas(id) ON DELETE SET NULL;
+    `).catch((error) => console.error("Erro ao criar coluna manutencoes.maquinaId:", error.message));
+    console.log("✅ Coluna manutencoes.maquinaId verificada!");
+
     // Migration: role MACHINEPAY no enum (idempotente)
     await sequelize.query(`
       DO $$ BEGIN

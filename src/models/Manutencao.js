@@ -30,6 +30,15 @@ const Manutencao = sequelize.define(
         key: "id",
       },
     },
+    // Máquina da manutenção (opcional): permite ver o histórico por máquina
+    maquinaId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: "maquinas",
+        key: "id",
+      },
+    },
     status: {
       type: DataTypes.ENUM("PENDENTE", "RESOLVIDA"),
       allowNull: false,

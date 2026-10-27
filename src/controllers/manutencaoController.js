@@ -4,9 +4,16 @@ import {
   GastoVariavel,
   Loja,
   Manutencao,
+  Maquina,
   ManutencaoUsuario,
   Usuario,
 } from "../models/index.js";
+
+const includeMaquina = {
+  model: Maquina,
+  as: "maquina",
+  attributes: ["id", "codigo", "nome", "lojaId"],
+};
 
 const includeAdmin = [
   {
@@ -30,6 +37,7 @@ const includeAdmin = [
     as: "loja",
     attributes: ["id", "nome"],
   },
+  includeMaquina,
 ];
 
 export const listarFuncionariosManutencao = async (req, res) => {
@@ -54,7 +62,27 @@ export const criarManutencao = async (req, res) => {
   const transaction = await sequelize.transaction();
 
   try {
-    const { titulo, descricao, funcionariosIds, custo, lojaId } = req.body;
+    const { titulo, descricao, funcionariosIds, custo, maquinaId } = req.body;
+    let { lojaId } = req.body;
+
+    // Manutenção de uma máquina: a loja é a da máquina
+    if (maquinaId) {
+      const maquina = await Maquina.findByPk(maquinaId, {
+        attributes: ["id", "lojaId"],
+        transaction,
+      });
+      if (!maquina) {
+        await transaction.rollback();
+        return res.status(400).json({ error: "Máquina informada não encontrada" });
+      }
+      if (lojaId && maquina.lojaId && lojaId !== maquina.lojaId) {
+        await transaction.rollback();
+        return res
+          .status(400)
+          .json({ error: "A máquina informada não pertence à loja selecionada" });
+      }
+      lojaId = lojaId || maquina.lojaId;
+    }
 
     if (!titulo || !descricao) {
       await transaction.rollback();
@@ -128,6 +156,7 @@ export const criarManutencao = async (req, res) => {
         descricao,
         custo: custoInformado ? custoNumerico : null,
         lojaId: lojaId || null,
+        maquinaId: maquinaId || null,
         criadoPorId: req.usuario.id,
       },
       { transaction },
@@ -173,9 +202,14 @@ export const criarManutencao = async (req, res) => {
 
 export const listarManutencoes = async (req, res) => {
   try {
-    const { status, dataInicio, dataFim, lojaId, usuarioId } = req.query;
+    const { status, dataInicio, dataFim, lojaId, usuarioId, maquinaId } =
+      req.query;
     let include = [...includeAdmin];
     const where = {};
+
+    if (maquinaId) {
+      where.maquinaId = maquinaId;
+    }
 
     if (req.usuario.role !== "ADMIN") {
       where.status = "PENDENTE";
@@ -203,6 +237,7 @@ export const listarManutencoes = async (req, res) => {
           as: "loja",
           attributes: ["id", "nome"],
         },
+        includeMaquina,
       ];
     } else {
       if (status && ["PENDENTE", "RESOLVIDA"].includes(status)) {
