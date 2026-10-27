@@ -4,26 +4,29 @@ import {
   listarFechamentosMensaisRelatorio,
   obterFechamentoMensalRelatorio,
 } from "../controllers/fechamentoMensalRelatorioController.js";
-import { autenticar, autorizarRole } from "../middlewares/auth.js";
+import {
+  autenticar,
+  autorizarPermissao,
+} from "../middlewares/auth.js";
 
 const router = express.Router();
 
 router.get(
   "/",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("relatorios", "ADMIN"),
   listarFechamentosMensaisRelatorio,
 );
 router.get(
   "/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("relatorios", "ADMIN"),
   obterFechamentoMensalRelatorio,
 );
 router.post(
   "/",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("relatorios", "ADMIN"),
   criarFechamentoMensalRelatorio,
 );
 

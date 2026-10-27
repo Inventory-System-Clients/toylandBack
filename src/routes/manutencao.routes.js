@@ -7,8 +7,8 @@ import {
 } from "../controllers/manutencaoController.js";
 import {
   autenticar,
-  autorizarRole,
   registrarLog,
+  autorizarPermissao,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -18,12 +18,12 @@ router.use(autenticar);
 router.get("/", listarManutencoes);
 router.get(
   "/funcionarios",
-  autorizarRole("ADMIN"),
+  autorizarPermissao("manutencao.gerenciar", "ADMIN"),
   listarFuncionariosManutencao,
 );
 router.post(
   "/",
-  autorizarRole("ADMIN"),
+  autorizarPermissao("manutencao.gerenciar", "ADMIN"),
   registrarLog("CRIAR_MANUTENCAO", "Manutencao"),
   criarManutencao,
 );

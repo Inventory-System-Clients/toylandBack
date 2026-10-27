@@ -14,10 +14,12 @@ import {
   sincronizarVendasPorHora,
 } from "../services/machinePayVendasHoraService.js";
 import { montarPicos, montarRankingMaquinas, somarDias } from "../utils/machinePayAnalise.js";
+import { temPermissao } from "../utils/permissoes.js";
 
 const PERIODOS_PICO = [7, 30, 90];
 
-const verValores = (usuario) => ["ADMIN", "MACHINEPAY"].includes(usuario?.role);
+const verValores = (usuario) =>
+  temPermissao(usuario, "machinePay.valores", ["ADMIN", "MACHINEPAY"]);
 
 // Código mostrado ao lado do nome: o da máquina no sistema, senão o id do painel
 const codigoDe = (m) => m.vinculo?.codigo || m.idPainel || m.posId;

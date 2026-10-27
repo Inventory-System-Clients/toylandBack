@@ -9,7 +9,10 @@ import {
   obterTokensLote,
   listarEnviosLink,
 } from "../controllers/creditoRemotoController.js";
-import { autenticar, autorizarRole } from "../middlewares/auth.js";
+import {
+  autenticar,
+  autorizarPermissao,
+} from "../middlewares/auth.js";
 
 const router = express.Router();
 
@@ -62,30 +65,30 @@ router.post(
 );
 
 // Admin
-router.get("/links", autenticar, autorizarRole("ADMIN"), listarLinks);
-router.post("/links", autenticar, autorizarRole("ADMIN"), criarLink);
+router.get("/links", autenticar, autorizarPermissao("vouchers", "ADMIN"), listarLinks);
+router.post("/links", autenticar, autorizarPermissao("vouchers", "ADMIN"), criarLink);
 router.post(
   "/links/:id/bloquear",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("vouchers", "ADMIN"),
   bloquearLink,
 );
 router.get(
   "/links/:id/token",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("vouchers", "ADMIN"),
   obterTokenLink,
 );
 router.get(
   "/lotes/:loteId/tokens",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("vouchers", "ADMIN"),
   obterTokensLote,
 );
 router.get(
   "/links/:id/envios",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("vouchers", "ADMIN"),
   listarEnviosLink,
 );
 

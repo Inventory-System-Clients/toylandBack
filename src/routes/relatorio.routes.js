@@ -15,7 +15,10 @@ import {
   machinePayTotalMes,
 } from "../controllers/relatorioController.js";
 import { alertasAbastecimentoIncompleto } from "../controllers/movimentacaoController.js";
-import { autenticar, autorizarRole } from "../middlewares/auth.js";
+import {
+  autenticar,
+  autorizarPermissao,
+} from "../middlewares/auth.js";
 
 const router = express.Router();
 
@@ -23,13 +26,13 @@ const router = express.Router();
 router.get(
   "/alertas-movimentacao-out",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   alertasMovimentacaoOut,
 );
 router.get(
   "/alertas-movimentacao-in",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   alertasMovimentacaoIn,
 );
 
@@ -37,85 +40,85 @@ router.get(
 router.get(
   "/balanco-semanal",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("relatorios", "ADMIN"),
   balançoSemanal,
 );
 router.get(
   "/alertas-movimentacao-inconsistente",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   buscarAlertasDeInconsistencia,
 );
 router.delete(
   "/alertas-movimentacao-inconsistente/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   ignorarAlertaMovimentacao,
 );
 router.get(
   "/alertas-estoque",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   alertasEstoque,
 );
 router.get(
   "/alertas-bom-desempenho",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   alertasBomDesempenho,
 );
 router.delete(
   "/alertas-bom-desempenho/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   ignorarAlertaMovimentacao,
 );
 router.get(
   "/alertas-pelucia-gigante",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   alertasPeluciaGigante,
 );
 router.get(
   "/machine-pay-mes",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("relatorios", "ADMIN"),
   machinePayTotalMes,
 );
 router.get(
   "/performance-maquinas",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("relatorios", "ADMIN"),
   performanceMaquinas,
 );
 router.get(
   "/impressao",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "graficos"], "ADMIN"),
   relatorioImpressao,
 );
 router.get(
   "/todas-lojas",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "graficos"], "ADMIN"),
   relatorioTodasLojas,
 );
 router.get(
   "/dashboard",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "graficos"], "ADMIN"),
   dashboardRelatorio,
 );
 router.get(
   "/alertas-abastecimento-incompleto",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   alertasAbastecimentoIncompleto,
 );
 router.delete(
   "/alertas-abastecimento-incompleto/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["relatorios", "alertas"], "ADMIN"),
   ignorarAlertaMovimentacao,
 );
 

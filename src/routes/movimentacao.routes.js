@@ -8,8 +8,8 @@ import {
 } from "../controllers/movimentacaoController.js";
 import {
   autenticar,
-  autorizarRole,
   registrarLog,
+  autorizarPermissao,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -31,7 +31,7 @@ router.put(
 router.delete(
   "/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("movimentacoes.gerenciar", "ADMIN"),
   registrarLog("DELETAR_MOVIMENTACAO", "Movimentacao"),
   deletarMovimentacao
 );

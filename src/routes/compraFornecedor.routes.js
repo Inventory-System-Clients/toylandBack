@@ -5,16 +5,16 @@ import {
 } from "../controllers/compraFornecedorController.js";
 import {
   autenticar,
-  autorizarRole,
   registrarLog,
+  autorizarPermissao,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
-router.get("/", autenticar, autorizarRole("ADMIN"), listarComprasFornecedores);
+router.get("/", autenticar, autorizarPermissao(["fornecedores", "estoque"], "ADMIN"), listarComprasFornecedores);
 router.post(
   "/",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao(["fornecedores", "estoque"], "ADMIN"),
   registrarLog("REGISTRAR_COMPRA_FORNECEDOR", "CompraFornecedor"),
   criarCompraFornecedor,
 );

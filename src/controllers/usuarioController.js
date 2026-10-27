@@ -1,5 +1,6 @@
 import { Usuario, UsuarioLoja, Loja } from "../models/index.js";
 import { Op } from "sequelize";
+import { sanitizarPermissoes } from "../utils/permissoes.js";
 
 // Listar todos os usuários (apenas ADMIN)
 export const listarUsuarios = async (req, res) => {
@@ -78,7 +79,8 @@ export const obterUsuario = async (req, res) => {
 // Criar novo usuário (apenas ADMIN)
 export const criarUsuario = async (req, res) => {
   try {
-    const { nome, email, senha, telefone, role, lojasPermitidas } = req.body;
+    const { nome, email, senha, telefone, role, lojasPermitidas, permissoes } =
+      req.body;
 
     if (!nome || !email || !senha) {
       return res
@@ -107,6 +109,8 @@ export const criarUsuario = async (req, res) => {
       senha,
       telefone,
       role,
+      // ADMIN sempre tem acesso total: não guarda personalização
+      permissoes: role === "ADMIN" ? null : sanitizarPermissoes(permissoes),
     });
 
     // Se for funcionário ou machinepay e tiver lojas permitidas, criar permissões
@@ -161,8 +165,16 @@ export const atualizarUsuario = async (req, res) => {
       return res.status(404).json({ error: "Usuário não encontrado" });
     }
 
-    const { nome, email, senha, telefone, role, ativo, lojasPermitidas } =
-      req.body;
+    const {
+      nome,
+      email,
+      senha,
+      telefone,
+      role,
+      ativo,
+      lojasPermitidas,
+      permissoes,
+    } = req.body;
 
     // Verificar se novo email já existe em outro usuário
     if (email && email !== usuario.email) {
@@ -187,6 +199,13 @@ export const atualizarUsuario = async (req, res) => {
       telefone: telefone ?? usuario.telefone,
       role: role ?? usuario.role,
       ativo: ativo ?? usuario.ativo,
+      // permissoes ausente no body = mantém; null = volta ao padrão da role
+      permissoes:
+        (role ?? usuario.role) === "ADMIN"
+          ? null
+          : permissoes === undefined
+            ? usuario.permissoes
+            : sanitizarPermissoes(permissoes),
     });
 
     // Se mudou para FUNCIONARIO ou atualizou lojas permitidas

@@ -23,11 +23,15 @@ import {
   horariosDePico,
   rankingMaquinas,
 } from "../controllers/machinePayAnaliseController.js";
-import { autenticar, autorizarRole, registrarLog } from "../middlewares/auth.js";
+import {
+  autenticar,
+  registrarLog,
+  autorizarPermissao,
+} from "../middlewares/auth.js";
 
 const router = express.Router();
 
-router.use(autenticar, autorizarRole("ADMIN", "MACHINEPAY"));
+router.use(autenticar, autorizarPermissao("machinePayDetalhado", "ADMIN", "MACHINEPAY"));
 
 router.get("/monitor/resumo", obterResumo);
 router.get("/monitor/maquinas", listarMaquinasMonitor);
@@ -44,34 +48,40 @@ router.get("/monitor/analise/picos", horariosDePico);
 router.get("/monitor/analise/ranking", rankingMaquinas);
 
 // Ações abertas pelo nome da máquina
-router.get("/monitor/maquinas/:posId/vendas", listarVendasMaquinaMonitor);
+router.get(
+  "/monitor/maquinas/:posId/vendas",
+  autorizarPermissao("machinePay.extrato", "ADMIN", "MACHINEPAY"),
+  listarVendasMaquinaMonitor,
+);
 router.post(
   "/monitor/maquinas/:posId/credito",
+  autorizarPermissao("machinePay.creditoRemoto", "ADMIN", "MACHINEPAY"),
   registrarLog("CREDITO_REMOTO_MACHINE_PAY", "MachinePay"),
   enviarCreditoMaquinaMonitor,
 );
 router.post(
   "/monitor/maquinas/:posId/devolucao",
+  autorizarPermissao("machinePay.devolucao", "ADMIN", "MACHINEPAY"),
   registrarLog("DEVOLUCAO_PAGAMENTO_MACHINE_PAY", "MachinePay"),
   devolverPagamentoMonitor,
 );
 
-// Configuração do ponto: só ADMIN
+// Configuração do ponto: ADMIN ou permissão machinePay.horario
 router.put(
   "/monitor/maquinas/:posId/horario",
-  autorizarRole("ADMIN"),
+  autorizarPermissao("machinePay.horario", "ADMIN"),
   registrarLog("HORARIO_FUNCIONAMENTO_MACHINE_PAY", "MachinePay"),
   salvarHorarioMonitor,
 );
 router.put(
   "/monitor/maquinas/:posId/regiao",
-  autorizarRole("ADMIN"),
+  autorizarPermissao("machinePay.horario", "ADMIN"),
   registrarLog("REGIAO_MACHINE_PAY", "MachinePay"),
   salvarRegiaoMonitor,
 );
 router.put(
   "/monitor/maquinas/:posId/localizacao",
-  autorizarRole("ADMIN"),
+  autorizarPermissao("machinePay.horario", "ADMIN"),
   registrarLog("LOCALIZACAO_MACHINE_PAY", "MachinePay"),
   salvarLocalizacaoMonitor,
 );

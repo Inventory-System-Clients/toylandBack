@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { Usuario } from "../models/index.js";
 import LogAtividade from "../models/LogAtividade.js";
+import { temPermissao } from "../utils/permissoes.js";
 
 // US01 - Middleware de Autenticação
 export const autenticar = async (req, res, next) => {
@@ -31,6 +32,19 @@ export const autenticar = async (req, res, next) => {
 export const autorizarRole = (...rolesPermitidas) => {
   return (req, res, next) => {
     if (!rolesPermitidas.includes(req.usuario.role)) {
+      return res.status(403).json({
+        error: "Acesso negado. Você não tem permissão para esta ação.",
+      });
+    }
+    next();
+  };
+};
+
+// Autorização por permissão personalizada (utils/permissoes.js). Sem
+// personalização, vale a role: `rolesLegado` são as que já tinham acesso.
+export const autorizarPermissao = (chaves, ...rolesLegado) => {
+  return (req, res, next) => {
+    if (!temPermissao(req.usuario, chaves, rolesLegado)) {
       return res.status(403).json({
         error: "Acesso negado. Você não tem permissão para esta ação.",
       });

@@ -8,32 +8,32 @@ import {
 } from "../controllers/fornecedorController.js";
 import {
   autenticar,
-  autorizarRole,
   registrarLog,
+  autorizarPermissao,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
 
-router.get("/", autenticar, autorizarRole("ADMIN"), listarFornecedores);
-router.get("/:id", autenticar, autorizarRole("ADMIN"), obterFornecedor);
+router.get("/", autenticar, autorizarPermissao(["fornecedores", "estoque"], "ADMIN"), listarFornecedores);
+router.get("/:id", autenticar, autorizarPermissao(["fornecedores", "estoque"], "ADMIN"), obterFornecedor);
 router.post(
   "/",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("fornecedores", "ADMIN"),
   registrarLog("CRIAR_FORNECEDOR", "Fornecedor"),
   criarFornecedor,
 );
 router.put(
   "/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("fornecedores", "ADMIN"),
   registrarLog("EDITAR_FORNECEDOR", "Fornecedor"),
   atualizarFornecedor,
 );
 router.delete(
   "/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("fornecedores", "ADMIN"),
   registrarLog("DELETAR_FORNECEDOR", "Fornecedor"),
   deletarFornecedor,
 );

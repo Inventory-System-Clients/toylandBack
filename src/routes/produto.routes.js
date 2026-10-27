@@ -9,8 +9,8 @@ import {
 } from "../controllers/produtoController.js";
 import {
   autenticar,
-  autorizarRole,
   registrarLog,
+  autorizarPermissao,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
@@ -21,21 +21,21 @@ router.get("/:id", autenticar, obterProduto);
 router.post(
   "/",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("produtos.gerenciar", "ADMIN"),
   registrarLog("CRIAR_PRODUTO", "Produto"),
   criarProduto
 );
 router.put(
   "/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("produtos.gerenciar", "ADMIN"),
   registrarLog("EDITAR_PRODUTO", "Produto"),
   atualizarProduto
 );
 router.delete(
   "/:id",
   autenticar,
-  autorizarRole("ADMIN"),
+  autorizarPermissao("produtos.gerenciar", "ADMIN"),
   registrarLog("DELETAR_PRODUTO", "Produto"),
   deletarProduto
 );

@@ -50,6 +50,7 @@ export const login = async (req, res) => {
         email: usuario.email,
         role: usuario.role,
         telefone: usuario.telefone,
+        permissoes: usuario.permissoes ?? null,
       },
     });
   } catch (error) {
@@ -100,6 +101,7 @@ export const registrar = async (req, res) => {
         email: usuario.email,
         role: usuario.role,
         telefone: usuario.telefone,
+        permissoes: usuario.permissoes ?? null,
       },
     });
   } catch (error) {

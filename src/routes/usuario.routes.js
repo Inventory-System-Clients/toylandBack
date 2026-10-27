@@ -11,14 +11,22 @@ import {
   autenticar,
   autorizarRole,
   registrarLog,
+  autorizarPermissao,
 } from "../middlewares/auth.js";
 
 const router = express.Router();
 
-// Todas as rotas requerem autenticação e role ADMIN
-router.use(autenticar, autorizarRole("ADMIN"));
+router.use(autenticar);
 
-router.get("/", listarUsuarios);
+// A lista também alimenta os filtros de Relatórios e Manutenção
+router.get(
+  "/",
+  autorizarPermissao(["relatorios", "manutencao.gerenciar"], "ADMIN"),
+  listarUsuarios,
+);
+
+// Demais rotas: só ADMIN
+router.use(autorizarRole("ADMIN"));
 router.get("/:id", obterUsuario);
 router.post("/", registrarLog("CRIAR_USUARIO", "Usuario"), criarUsuario);
 router.put("/:id", registrarLog("EDITAR_USUARIO", "Usuario"), atualizarUsuario);

@@ -153,6 +153,13 @@ const startServer = async () => {
     `).catch((error) => console.error("Erro ao criar coluna manutencoes.maquinaId:", error.message));
     console.log("✅ Coluna manutencoes.maquinaId verificada!");
 
+    // Migration: permissões personalizadas do usuário (idempotente)
+    await sequelize.query(`
+      ALTER TABLE usuarios
+      ADD COLUMN IF NOT EXISTS permissoes JSONB DEFAULT NULL;
+    `).catch((error) => console.error("Erro ao criar coluna usuarios.permissoes:", error.message));
+    console.log("✅ Coluna usuarios.permissoes verificada!");
+
     // Migration: role MACHINEPAY no enum (idempotente)
     await sequelize.query(`
       DO $$ BEGIN

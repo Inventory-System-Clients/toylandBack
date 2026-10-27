@@ -39,6 +39,12 @@ const Usuario = sequelize.define(
       type: DataTypes.BOOLEAN,
       defaultValue: true,
     },
+    // null = acesso padrão da role; array = abas/funcionalidades liberadas pelo ADMIN
+    permissoes: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: null,
+    },
   },
   {
     tableName: "usuarios",

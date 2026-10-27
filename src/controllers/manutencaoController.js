@@ -8,6 +8,11 @@ import {
   ManutencaoUsuario,
   Usuario,
 } from "../models/index.js";
+import { temPermissao } from "../utils/permissoes.js";
+
+// Vê todas as manutenções (com filtros) e resolve qualquer uma
+const gerenciaManutencoes = (usuario) =>
+  temPermissao(usuario, "manutencao.gerenciar", ["ADMIN"]);
 
 const includeMaquina = {
   model: Maquina,
@@ -211,7 +216,7 @@ export const listarManutencoes = async (req, res) => {
       where.maquinaId = maquinaId;
     }
 
-    if (req.usuario.role !== "ADMIN") {
+    if (!gerenciaManutencoes(req.usuario)) {
       where.status = "PENDENTE";
       include = [
         {
@@ -303,7 +308,7 @@ export const resolverManutencao = async (req, res) => {
     }
 
     const usuarioPermitido =
-      req.usuario.role === "ADMIN" ||
+      gerenciaManutencoes(req.usuario) ||
       manutencao.funcionariosPermitidos.some(
         (usuario) => usuario.id === req.usuario.id,
       );
