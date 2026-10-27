@@ -7,6 +7,7 @@ import {
   MachinePayEvento,
   MachinePayHorario,
 } from "../models/index.js";
+import { temPermissao } from "../utils/permissoes.js";
 import {
   coletarStatusMachinePay,
   dataBrasil,
@@ -614,13 +615,15 @@ const leitorConhecido = async (posId) =>
 const idMaquinaVinculada = async (posId) =>
   (await Maquina.findOne({ where: { machinePayPosId: String(posId) }, attributes: ["id"] }))?.id;
 
-// Quem não é ADMIN só consulta vendas de hoje e dos últimos N dias
+// Sem "machinePay.extratoCompleto" (ADMIN tem sempre) só se consulta vendas de
+// hoje e dos últimos N dias
 const DIAS_VENDAS_NAO_ADMIN = 3;
+const veExtratoCompleto = (usuario) => temPermissao(usuario, "machinePay.extratoCompleto");
 
-// Período do extrato (dias inteiros, horário de Brasília). ADMIN: qualquer data
-// (padrão: 30 dias, como o painel). Demais: só os últimos DIAS_VENDAS_NAO_ADMIN dias.
+// Período do extrato (dias inteiros, horário de Brasília). Extrato completo: qualquer
+// data (padrão: 30 dias, como o painel). Demais: só os últimos DIAS_VENDAS_NAO_ADMIN dias.
 const periodoExtrato = (query, usuario) => {
-  const isAdmin = usuario?.role === "ADMIN";
+  const isAdmin = veExtratoCompleto(usuario);
   const hoje = dataBrasil();
   const { inicio, fim: fimPedido } = lerPeriodo(query, isAdmin ? 30 : DIAS_VENDAS_NAO_ADMIN + 1);
   const fim = fimPedido > hoje ? hoje : fimPedido;
@@ -651,7 +654,7 @@ export const listarVendasMaquinaMonitor = async (req, res) => {
     });
     res.json({
       periodo: { inicio: periodo.inicio, fim: periodo.fim },
-      limiteDias: req.usuario?.role === "ADMIN" ? null : DIAS_VENDAS_NAO_ADMIN,
+      limiteDias: veExtratoCompleto(req.usuario) ? null : DIAS_VENDAS_NAO_ADMIN,
       vendas,
     });
   } catch (error) {

@@ -34,6 +34,7 @@ export const PERMISSOES_VALIDAS = [
   "lojas.gerenciar",
   "machinePay.valores",
   "machinePay.extrato",
+  "machinePay.extratoCompleto",
   "machinePay.creditoRemoto",
   "machinePay.devolucao",
   "machinePay.horario",
