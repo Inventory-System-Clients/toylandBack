@@ -466,6 +466,9 @@ export async function usrDaContaLogada() {
   return usrContaLogadaCache;
 }
 
+// Sem chamar o painel: o usr da conta logada já descoberto (null até a 1ª coleta)
+export const usrDaContaLogadaEmCache = () => usrContaLogadaCache;
+
 export const ehUsrDaContaLogada = async (usrId) =>
   Boolean(usrId) && String(usrId) === (await usrDaContaLogada().catch(() => null));
 

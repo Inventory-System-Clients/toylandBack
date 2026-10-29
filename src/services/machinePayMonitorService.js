@@ -17,6 +17,7 @@ import {
   listarMaquinasCadastradas,
   MachinePayServiceError,
   usrDaContaLogada,
+  usrDaContaLogadaEmCache,
 } from "./machinePayDetalhadoService.js";
 import { parsearPainelMaquinas } from "./machinePayPainelParser.js";
 import { atualizarLocalizacoesPorIp } from "./machinePayGeoIpService.js";
@@ -69,8 +70,7 @@ export async function usrsCadastrados() {
   ];
 }
 
-// POS IDs das máquinas cadastradas no sistema. Como no Agarramais, só esses
-// leitores entram: as contas lidas podem ter leitores de outros clientes.
+// POS IDs das máquinas cadastradas no sistema
 export async function posIdsCadastrados() {
   const maquinas = await Maquina.findAll({
     where: { machinePayPosId: { [Op.ne]: null } },
@@ -82,10 +82,18 @@ export async function posIdsCadastrados() {
   ];
 }
 
-// Filtro de machine_pay_status: só leitores com POS ID cadastrado. Linhas antigas
-// de outros leitores continuam no banco, mas nunca aparecem nem são usadas.
+// Filtro de machine_pay_status: leitores com POS ID cadastrado ou das contas das
+// máquinas (todas são da Toyland; os sem máquina aparecem como "sem vínculo").
+// A conta de login (revenda) nunca entra.
 export async function whereMaquinasCadastradas() {
-  return { posId: { [Op.in]: await posIdsCadastrados() } };
+  const usrLogado = usrDaContaLogadaEmCache();
+  const contas = (await usrsCadastrados()).filter((usrId) => usrId !== usrLogado);
+  return {
+    [Op.or]: [
+      { posId: { [Op.in]: await posIdsCadastrados() } },
+      { usrId: { [Op.in]: contas } },
+    ],
+  };
 }
 
 // Máximo de extratos consultados por coleta para achar o dono de um POS ID
@@ -151,8 +159,8 @@ async function executarColeta() {
     contasLidas.add(usrId);
     const html = await listarMaquinasCadastradas({ usrId });
     for (const leitura of parsearPainelMaquinas(html)) {
-      // Só leitores de máquinas do sistema (a conta pode ter de outros clientes)
-      if (!posIdsDoSistema.has(leitura.posId) || vistos.has(leitura.posId)) continue;
+      // Todos os leitores das contas da Toyland entram, com ou sem máquina vinculada
+      if (vistos.has(leitura.posId)) continue;
       vistos.add(leitura.posId);
       if (ehCaixaLivre(leitura.nomePonto)) {
         caixasLivres.add(leitura.posId);
